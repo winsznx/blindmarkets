@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const path = require('path');
+const fs = require('fs');
 const webpack = require('webpack');
 
 const nextConfig = {
@@ -25,16 +26,25 @@ const nextConfig = {
     // - Avoid hijacking starkzap's own nested starknet v9 (AbiParser2 mismatch)
     //
     // Webpack aliases are global, so instead we use a scoped replacement: only rewrite
-    // requests for `starknet` when the issuer is NOT inside `node_modules/starkzap`.
+    // requests for `starknet` based on who is importing it.
     config.plugins = config.plugins || [];
     config.plugins.push(
       new webpack.NormalModuleReplacementPlugin(/^starknet$/, (resource) => {
         const context = resource.context || '';
-        if (context.includes(`${path.sep}node_modules${path.sep}starkzap`)) return;
-        resource.request = path.resolve(
-          __dirname,
-          'node_modules/starknet/dist/index.js'
-        );
+        const isStarkzapIssuer = context.includes(`${path.sep}node_modules${path.sep}starkzap`);
+
+        if (isStarkzapIssuer) {
+          const starkzapPinned = path.resolve(
+            __dirname,
+            'node_modules/starkzap/node_modules/starknet/dist/index.js'
+          );
+          if (fs.existsSync(starkzapPinned)) {
+            resource.request = starkzapPinned;
+            return;
+          }
+        }
+
+        resource.request = path.resolve(__dirname, 'node_modules/starknet/dist/index.js');
       })
     );
 
