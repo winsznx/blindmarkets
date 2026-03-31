@@ -1,6 +1,5 @@
 /** @type {import('next').NextConfig} */
 const path = require('path');
-const fs = require('fs');
 const webpack = require('webpack');
 
 const nextConfig = {
@@ -17,36 +16,25 @@ const nextConfig = {
     ];
   },
   webpack: (config) => {
-    // starknet v6 exports a "browser" condition that points to `dist/index.global.js`,
-    // an IIFE with no module exports. This breaks bundlers that prefer "browser" for
-    // client builds.
+    // starknet v6 ships a "browser" export condition pointing to index.global.js,
+    // an IIFE with no module exports, making WalletAccount etc. undefined at runtime.
+    // Pin our app code to the CJS build directly.
     //
-    // We must:
-    // - Force *our* dependency graph to use the module build (`dist/index.js`)
-    // - Avoid hijacking starkzap's own nested starknet v9 (AbiParser2 mismatch)
-    //
-    // Webpack aliases are global, so instead we use a scoped replacement: only rewrite
-    // requests for `starknet` based on who is importing it.
-    config.plugins = config.plugins || [];
-    config.plugins.push(
-      new webpack.NormalModuleReplacementPlugin(/^starknet$/, (resource) => {
-        const context = resource.context || '';
-        const isStarkzapIssuer = context.includes(`${path.sep}node_modules${path.sep}starkzap`);
-
-        if (isStarkzapIssuer) {
-          const starkzapPinned = path.resolve(
-            __dirname,
-            'node_modules/starkzap/node_modules/starknet/dist/index.mjs'
-          );
-          if (fs.existsSync(starkzapPinned)) {
-            resource.request = starkzapPinned;
-            return;
-          }
-        }
-
-        resource.request = path.resolve(__dirname, 'node_modules/starknet/dist/index.mjs');
-      })
+    // starkzap has a nested starknet v9. Both v6 and v9 have `require("fs")` inside
+    // file-reading helper functions. These are never called in a browser wallet flow,
+    // but webpack still tries to resolve `fs` at bundle time. Stub it out.
+    config.resolve.alias['starknet'] = path.resolve(
+      __dirname,
+      'node_modules/starknet/dist/index.js'
     );
+
+    // Stub Node built-ins that appear in starknet v9 file-reading helpers.
+    // Those code paths are unreachable in browser usage.
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      path: false,
+    };
 
     // Stub optional GCP logging dep pulled in by @hyperlane-xyz/utils (starkzap Solana bridge).
     config.resolve.alias['@google-cloud/pino-logging-gcp-config'] = false;
