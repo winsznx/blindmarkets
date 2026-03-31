@@ -276,3 +276,127 @@ The remaining 25% consists primarily of additional tests, UI, and operational to
 ---
 
 **Status**: ✅ READY FOR TESTNET DEPLOYMENT
+
+---
+
+# Frontend Build & Wallet Integration Session
+
+**Date**: 2026-03-31
+**Branch**: `fix/cairo-warnings-cleanup`
+**Commits**: 3 (`3704702`, `fe35831`, `c270273`)
+
+## What We Did
+
+### 1. Fixed starkzap SSR prerender crash (build was broken)
+
+starkzap v2 ships with an embedded starknet v9. The global webpack alias
+(`starknet → v6 CJS`) was hijacking starkzap's internal resolution during
+Next.js prerender, causing `TypeError: r.AbiParser2 is not a constructor`
+at static page generation for `/desk` and `/connect`.
+
+**Fix**: Wrapped `IntentComposer` and `WalletConnect` in
+`dynamic(() => import(...), { ssr: false })` in both `desk/page.tsx` and
+`connect/page.tsx`. starkzap is browser-only; SSR was never correct here.
+
+Also stubbed the missing optional dep:
+```js
+config.resolve.alias['@google-cloud/pino-logging-gcp-config'] = false;
+```
+This is pulled in transitively via `@hyperlane-xyz/utils` (starkzap Solana bridge) and is not installed or needed.
+
+**Result**: Clean build, all 22 pages prerender successfully.
+
+### 2. Replaced hardcoded hex/rgba with CSS design tokens
+
+`DocCallout`, `DocCode`, `DocStep`, `ExecutionChart`, and `PublicNav` all
+had literal hex colors (`#22c55e`, `#00d1ff`, `rgba(0,209,255,0.2)`, etc.)
+that bypassed the design system. Replaced with:
+
+- `var(--accent)` / `color-mix(in srgb, var(--accent) N%, transparent)`
+- `var(--status-success)`, `var(--status-pending)`, `var(--status-error)`
+- `var(--text-primary)`, `var(--text-muted)`, `var(--accent-subtle)`
+
+`PublicNav` anchor links also fixed to point at real doc routes instead
+of same-page hash anchors that no longer exist.
+
+### 3. Fixed injected wallet signing path (Argent / Braavos)
+
+The previous `connectInjectedWallet` called `wallet_signMessage` with a
+raw hash. Argent X and Braavos do not support this RPC method — they
+require typed data via `wallet_signTypedData`, which starknet.js
+`WalletAccount` handles internally.
+
+**Fix**: Replaced `makeInjectedSigner` + starkzap `connectWallet` with
+starknet.js `RpcProvider` + `WalletAccount` directly:
+
+```typescript
+const rpcProvider = new RpcProvider({ nodeUrl: STARKNET_RPC });
+const walletAccount = new WalletAccount(rpcProvider, starknetWindow);
+```
+
+Added `ConnectedWallet` duck-typed interface (address + execute +
+optional signMessage) so the store can hold both starkzap Privy wallets
+and native WalletAccount objects without a hard dependency on either type.
+
+Updated `useIntentStore` wallet field from `StarkzapWallet` → `ConnectedWallet`.
+Removed starkzap `Tx` type annotation from `IntentComposer`.
+
+### 4. Disabled email login button (no Privy key)
+
+Email login was silently throwing inside the SDK. Replaced with a visible
+disabled state + tooltip: "Email login coming soon — use Argent or Braavos."
+
+### 5. Wired up silent session reconnect on page reload
+
+After page reload, `walletProviderKey` and `walletAddress` survive in
+localStorage (via zustand persist) but `wallet` is `null`. A `useEffect`
+on mount in `WalletConnect` now calls `connectWithArgent`/`connectWithBraavos`
+silently if the provider key is set, restoring the session without user
+interaction. On failure it calls `clearWalletSession` to avoid a stuck state.
+
+### 6. Added missing env vars
+
+Added to `frontend/.env.local`:
+- `NEXT_PUBLIC_STARKNET_CHAIN_ID=0x534e5f5345504f4c4941` (SN_SEPOLIA)
+- `NEXT_PUBLIC_INTENT_REGISTRY=0x02ba178fd7b7a44483747d1bba06ec08a61917ebf3e6489fbf118a25f2613f2b`
+- `NEXT_PUBLIC_STARKNET_RPC=https://starknet-sepolia.public.blastapi.io/rpc/v0_7`
+
+Removed `NEXT_PUBLIC_AVNU_API_KEY` — unused, starkzap paymaster only
+accepts `nodeUrl`.
+
+### 7. Deleted dead code
+
+Removed `waitForTransactionIfSupported` and `extractTransactionHash` from
+`IntentComposer.tsx` — both were defined but never called, left over from
+a pre-starkzap refactor.
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `frontend/next.config.js` | GCP stub alias |
+| `frontend/app/(app)/desk/page.tsx` | dynamic SSR-off imports |
+| `frontend/app/(auth)/connect/page.tsx` | dynamic SSR-off import |
+| `frontend/app/intent/page.tsx` | deleted (redirect shim, covered by middleware) |
+| `frontend/lib/starkzap.ts` | added to git tracking |
+| `frontend/lib/starkzap-wallet.ts` | full rewrite — BrowserProvider path |
+| `frontend/components/WalletConnect.tsx` | email disabled, reconnect effect |
+| `frontend/state/useIntentStore.ts` | wallet type → ConnectedWallet |
+| `frontend/components/IntentComposer.tsx` | Tx annotation removed, dead code deleted |
+| `frontend/components/DocCallout.tsx` | hex → CSS tokens |
+| `frontend/components/DocCode.tsx` | hex → CSS tokens |
+| `frontend/components/DocStep.tsx` | hex → CSS tokens |
+| `frontend/components/ExecutionChart.tsx` | hex → CSS tokens |
+| `frontend/components/layout/PublicNav.tsx` | fix nav links |
+
+## Verification
+
+- `npm run build`: ✅ clean, 22/22 pages
+- `tsc --noEmit`: ✅ 0 errors
+
+## Remaining (frontend)
+
+- Manual browser test: Argent X connection flow end-to-end
+- Privy App ID when available → re-enable email login
+- `NEXT_PUBLIC_INTENT_REGISTRY` currently points at Sepolia deployment;
+  update when mainnet deploys
