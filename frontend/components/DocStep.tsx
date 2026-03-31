@@ -12,9 +12,9 @@ export function DocStep({
       <div
         className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold"
         style={{
-          background: 'rgba(0,209,255,0.08)',
-          border: '1px solid rgba(0,209,255,0.2)',
-          color: '#00d1ff',
+          background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
+          color: 'var(--accent)',
         }}
       >
         {n}

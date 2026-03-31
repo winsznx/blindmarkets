@@ -72,10 +72,10 @@ export default function ExecutionChart() {
         {!isLoading && data.length > 0 && (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data}>
-              <XAxis dataKey="name" stroke="#6b7280" tickLine={false} axisLine={false} />
+              <XAxis dataKey="name" stroke="var(--text-muted)" tickLine={false} axisLine={false} />
               <YAxis hide />
               <Tooltip content={<TooltipContent />} />
-              <Area type="monotone" dataKey="value" stroke="#3b82f6" fill="rgba(59,130,246,0.25)" />
+              <Area type="monotone" dataKey="value" stroke="var(--accent)" fill="var(--accent-subtle)" />
             </AreaChart>
           </ResponsiveContainer>
         )}

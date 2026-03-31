@@ -40,7 +40,7 @@ export function DocCode({
           <button
             onClick={copy}
             className="transition-colors px-2 py-0.5 rounded text-xs"
-            style={{ color: copied ? '#22c55e' : 'rgba(255,255,255,0.35)' }}
+            style={{ color: copied ? 'var(--status-success)' : 'rgba(255,255,255,0.35)' }}
           >
             {copied ? 'Copied' : 'Copy'}
           </button>
@@ -50,7 +50,7 @@ export function DocCode({
         className="overflow-x-auto px-5 py-4 text-sm leading-relaxed"
         style={{ background: 'rgba(0,0,0,0.4)', margin: 0 }}
       >
-        <code style={{ color: '#e2e8f0', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+        <code style={{ color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
           {children.trim()}
         </code>
       </pre>

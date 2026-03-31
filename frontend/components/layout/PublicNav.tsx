@@ -6,9 +6,9 @@ import { useEffect, useState } from 'react';
 import BrandMark from '@/components/BrandMark';
 
 const PUBLIC_LINKS = [
-  { href: '/#features', label: 'Features' },
-  { href: '/#how-it-works', label: 'How It Works' },
-  { href: '/#risk', label: 'Risk' },
+  { href: '/', label: 'Features' },
+  { href: '/docs/how-it-works', label: 'How It Works' },
+  { href: '/docs/traders', label: 'Risk' },
   { href: '/docs', label: 'Docs' },
 ];
 
