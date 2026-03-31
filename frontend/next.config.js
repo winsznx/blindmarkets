@@ -5,7 +5,6 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   output: 'standalone',
-  transpilePackages: ['starknet'],
   async redirects() {
     return [
       {
@@ -15,28 +14,26 @@ const nextConfig = {
       },
     ];
   },
-  webpack: (config, { webpack }) => {
+  webpack: (config) => {
     // starknet v6 ships a "browser" export condition pointing to index.global.js,
-    // an IIFE with no module exports, making WalletAccount etc. undefined at runtime.
-    // Using resolve.alias here would override starkzap's own nested starknet v9
-    // (node_modules/starkzap/node_modules/starknet), causing AbiParser2 not a
-    // constructor at runtime. Use NormalModuleReplacementPlugin instead so we
-    // can scope the redirect to importers outside starkzap's own package tree.
-    config.plugins.push(
-      new webpack.NormalModuleReplacementPlugin(/^starknet$/, (resource) => {
-        const issuer = resource.context ?? '';
-        if (!issuer.includes('/node_modules/starkzap')) {
-          resource.request = path.resolve(
-            __dirname,
-            'node_modules/starknet/dist/index.js'
-          );
-        }
-      })
+    // an IIFE with no module exports. Pin our app code to the CJS build directly.
+    //
+    // starkzap has its own nested starknet v9 at node_modules/starkzap/node_modules/starknet.
+    // v9 has NO "browser" export condition, so webpack resolves it to the real ESM/CJS build
+    // naturally. The alias is scoped to the top-level package name and does not override
+    // nested resolution inside starkzap's own node_modules subtree.
+    //
+    // NOTE: transpilePackages: ['starknet'] was removed. Next.js's transpilePackages
+    // implementation adds an internal alias that overrides nested resolution and forces
+    // starkzap back to v6's IIFE, causing AbiParser2 not a constructor at runtime.
+    config.resolve.alias['starknet'] = path.resolve(
+      __dirname,
+      'node_modules/starknet/dist/index.js'
     );
 
     // Stub optional GCP logging dep pulled in by @hyperlane-xyz/utils (starkzap Solana bridge).
-    // This package is not installed and is not needed for Starknet-only usage.
     config.resolve.alias['@google-cloud/pino-logging-gcp-config'] = false;
+
     return config;
   },
 };
