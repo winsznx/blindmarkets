@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const path = require('path');
+const webpack = require('webpack');
 
 const nextConfig = {
   reactStrictMode: true,
@@ -15,20 +16,26 @@ const nextConfig = {
     ];
   },
   webpack: (config) => {
-    // starknet v6 ships a "browser" export condition pointing to index.global.js,
-    // an IIFE with no module exports. Pin our app code to the CJS build directly.
+    // starknet v6 exports a "browser" condition that points to `dist/index.global.js`,
+    // an IIFE with no module exports. This breaks bundlers that prefer "browser" for
+    // client builds.
     //
-    // starkzap has its own nested starknet v9 at node_modules/starkzap/node_modules/starknet.
-    // v9 has NO "browser" export condition, so webpack resolves it to the real ESM/CJS build
-    // naturally. The alias is scoped to the top-level package name and does not override
-    // nested resolution inside starkzap's own node_modules subtree.
+    // We must:
+    // - Force *our* dependency graph to use the module build (`dist/index.js`)
+    // - Avoid hijacking starkzap's own nested starknet v9 (AbiParser2 mismatch)
     //
-    // NOTE: transpilePackages: ['starknet'] was removed. Next.js's transpilePackages
-    // implementation adds an internal alias that overrides nested resolution and forces
-    // starkzap back to v6's IIFE, causing AbiParser2 not a constructor at runtime.
-    config.resolve.alias['starknet'] = path.resolve(
-      __dirname,
-      'node_modules/starknet/dist/index.js'
+    // Webpack aliases are global, so instead we use a scoped replacement: only rewrite
+    // requests for `starknet` when the issuer is NOT inside `node_modules/starkzap`.
+    config.plugins = config.plugins || [];
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(/^starknet$/, (resource) => {
+        const context = resource.context || '';
+        if (context.includes(`${path.sep}node_modules${path.sep}starkzap`)) return;
+        resource.request = path.resolve(
+          __dirname,
+          'node_modules/starknet/dist/index.js'
+        );
+      })
     );
 
     // Stub optional GCP logging dep pulled in by @hyperlane-xyz/utils (starkzap Solana bridge).
