@@ -1,10 +1,14 @@
 import Link from 'next/link';
-import IntentComposer from '@/components/IntentComposer';
+import dynamic from 'next/dynamic';
 import BatchTimeline from '@/components/BatchTimeline';
 import SolverFillPreview from '@/components/SolverFillPreview';
 import RiskDisclosurePanel from '@/components/RiskDisclosurePanel';
 import AuditLogView from '@/components/AuditLogView';
-import WalletConnect from '@/components/WalletConnect';
+
+// starkzap is browser-only (wallet APIs). Disable SSR to prevent the prerender
+// from executing starkzap's module graph against the server's webpack bundle.
+const IntentComposer = dynamic(() => import('@/components/IntentComposer'), { ssr: false });
+const WalletConnect = dynamic(() => import('@/components/WalletConnect'), { ssr: false });
 
 export default function DashboardPage() {
   return (

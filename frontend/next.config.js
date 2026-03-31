@@ -16,13 +16,15 @@ const nextConfig = {
     ];
   },
   webpack: (config) => {
-    // Force starknet to use its CJS build.
-    // The package's "browser" export condition points to index.global.js,
-    // an IIFE with no module exports, making WalletAccount undefined at runtime.
+    // starknet v6 ships a "browser" export condition pointing to index.global.js,
+    // an IIFE with no module exports, making WalletAccount etc. undefined at runtime.
     config.resolve.alias['starknet'] = path.resolve(
       __dirname,
       'node_modules/starknet/dist/index.js'
     );
+    // Stub optional GCP logging dep pulled in by @hyperlane-xyz/utils (starkzap Solana bridge).
+    // This package is not installed and is not needed for Starknet-only usage.
+    config.resolve.alias['@google-cloud/pino-logging-gcp-config'] = false;
     return config;
   },
 };
