@@ -8,8 +8,6 @@ import { buildIntent, encryptIntentForGateway, generateNonce } from '../lib/inte
 import type { IntentPayload } from '../lib/intentCrypto';
 import {
   buildCancelIntentCall,
-  buildCommitIntentCall,
-  restoreWalletSession,
   signIntentAuthorization,
   truncateAddress,
 } from '../lib/starkzap-wallet';
@@ -137,7 +135,7 @@ export default function IntentComposer() {
 
     try {
       setIsSubmitting(true);
-      const activeWallet = await ensureWalletSession(wallet, walletProviderKey, setWalletSession);
+      const activeWallet = await ensureWalletSession(wallet);
       if (normalizeHex(activeWallet.address) !== normalizeHex(walletAddress)) {
         throw new Error('Connected wallet changed. Re-prepare the intent and try again.');
       }
@@ -154,7 +152,10 @@ export default function IntentComposer() {
       const gatewayPublicKey = (await gatewayPublicKeyResponse.json()).gateway_public_key as string;
 
       const encrypted = await encryptIntentForGateway(intent, gatewayPublicKey);
-      const authorization = await signIntentAuthorization(activeWallet, intent);
+      if (!activeWallet.signMessage) {
+        throw new Error('Connected wallet does not support message signing.');
+      }
+      const authorization = await signIntentAuthorization(activeWallet as Required<typeof activeWallet>, intent);
 
       const storageResponse = await fetch('/api/gateway/intents', {
         method: 'POST',
@@ -177,9 +178,16 @@ export default function IntentComposer() {
         throw new Error(await extractGatewayError(storageResponse));
       }
 
-      const transaction = await activeWallet.execute([buildCommitIntentCall(intent)]);
-      await waitForTransactionIfSupported(transaction);
-      const txHash = extractTransactionHash(transaction);
+      const tx = await activeWallet.execute(
+        [{
+          contractAddress: process.env.NEXT_PUBLIC_INTENT_REGISTRY!,
+          entrypoint: 'commit_intent',
+          calldata: [intent.intentHash, '0x0', `0x${intent.deadline.toString(16)}`],
+        }],
+        { feeMode: 'sponsored' },
+      );
+      await tx.wait();
+      const txHash = tx.hash;
       setPreparedNonce('');
       setPreparedIntent(null);
 
@@ -243,10 +251,13 @@ export default function IntentComposer() {
 
     try {
       setIsCanceling(true);
-      const activeWallet = await ensureWalletSession(wallet, walletProviderKey, setWalletSession);
-      const transaction = await activeWallet.execute([buildCancelIntentCall(statusIntentId)]);
-      await waitForTransactionIfSupported(transaction);
-      const txHash = extractTransactionHash(transaction);
+      const activeWallet = await ensureWalletSession(wallet);
+      const tx = await activeWallet.execute(
+        [buildCancelIntentCall(statusIntentId)],
+        { feeMode: 'sponsored' },
+      );
+      await tx.wait();
+      const txHash = tx.hash;
 
       const response = await fetch(`/api/gateway/intents/${statusIntentId}/onchain`, {
         method: 'POST',
@@ -549,24 +560,11 @@ export default function IntentComposer() {
 
 async function ensureWalletSession(
   wallet: ReturnType<typeof useIntentStore.getState>['wallet'],
-  providerKey: ReturnType<typeof useIntentStore.getState>['walletProviderKey'],
-  setWalletSession: ReturnType<typeof useIntentStore.getState>['setWalletSession']
 ) {
   if (wallet) {
     return wallet;
   }
-
-  if (!providerKey) {
-    throw new Error('No wallet provider selected. Connect your wallet first.');
-  }
-
-  const session = await restoreWalletSession(providerKey);
-  if (!session) {
-    throw new Error('Wallet session expired. Reconnect and submit again.');
-  }
-
-  setWalletSession(session.wallet, session.address, session.providerKey);
-  return session.wallet;
+  throw new Error('Wallet not connected. Connect your wallet from the /connect page.');
 }
 
 async function extractGatewayError(response: Response): Promise<string> {
@@ -621,22 +619,6 @@ function normalizeHex(value: string): string {
     return `0x${BigInt(normalized).toString(16)}`;
   }
   return `0x${normalized.toLowerCase()}`;
-}
-
-async function waitForTransactionIfSupported(transaction: unknown): Promise<void> {
-  const candidate = transaction as { wait?: () => Promise<void> };
-  if (typeof candidate.wait === 'function') {
-    await candidate.wait();
-  }
-}
-
-function extractTransactionHash(transaction: unknown): string {
-  const candidate = transaction as { hash?: string; transaction_hash?: string };
-  const hash = candidate.hash ?? candidate.transaction_hash;
-  if (!hash) {
-    throw new Error('Wallet did not return a transaction hash.');
-  }
-  return normalizeHex(hash);
 }
 
 function validateDeadlineMinutes(value: number): string | null {

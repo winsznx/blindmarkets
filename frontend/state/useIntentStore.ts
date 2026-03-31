@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { StarkzapWallet } from '@/lib/starkzap-wallet';
+import type { ConnectedWallet } from '@/lib/starkzap-wallet';
 
 export type IntentDraft = {
   assetIn: string;
@@ -17,11 +17,11 @@ export type WalletProviderKey = 'email' | 'argent' | 'braavos';
 type IntentState = {
   draft: IntentDraft;
   setDraft: (draft: Partial<IntentDraft>) => void;
-  wallet: StarkzapWallet | null;
+  wallet: ConnectedWallet | null;
   walletAddress: string;
   walletProviderKey: WalletProviderKey | null;
   setWalletSession: (
-    wallet: StarkzapWallet,
+    wallet: ConnectedWallet,
     address: string,
     providerKey: WalletProviderKey
   ) => void;

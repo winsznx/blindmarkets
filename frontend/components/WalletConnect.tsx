@@ -3,58 +3,57 @@
 import { useEffect, useState } from 'react';
 import { useIntentStore } from '../state/useIntentStore';
 import {
-  WALLET_PROVIDERS,
-  connectWallet,
-  restoreWalletSession,
+  connectWithEmail,
+  connectWithArgent,
+  connectWithBraavos,
   truncateAddress,
   type WalletProviderKey,
 } from '../lib/starkzap-wallet';
 
+const PROVIDERS: Array<{
+  key: WalletProviderKey;
+  label: string;
+  connect: () => Promise<{ address: string }>;
+  comingSoon?: boolean;
+}> = [
+  { key: 'email', label: 'Email login coming soon — use Argent or Braavos', connect: connectWithEmail, comingSoon: true },
+  { key: 'argent', label: 'Connect Argent', connect: connectWithArgent },
+  { key: 'braavos', label: 'Connect Braavos', connect: connectWithBraavos },
+];
+
 export default function WalletConnect() {
-  const {
-    wallet,
-    walletAddress,
-    walletProviderKey,
-    setWalletSession,
-    clearWalletSession,
-  } = useIntentStore();
+  const { wallet, walletAddress, walletProviderKey, setWalletSession, clearWalletSession } = useIntentStore();
   const [status, setStatus] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState<WalletProviderKey | null>(null);
+  const [connecting, setConnecting] = useState<WalletProviderKey | null>(null);
 
   useEffect(() => {
-    if (!walletProviderKey || wallet) {
-      return;
-    }
+    if (wallet || !walletProviderKey || !walletAddress) return;
 
-    let isMounted = true;
-    restoreWalletSession(walletProviderKey).then((session) => {
-      if (!isMounted) {
-        return;
-      }
-      if (session) {
-        setWalletSession(session.wallet, session.address, session.providerKey);
-      } else {
-        clearWalletSession();
-      }
-    });
-
-    return () => {
-      isMounted = false;
+    const reconnectors: Partial<Record<WalletProviderKey, () => Promise<{ address: string }>>> = {
+      argent: connectWithArgent,
+      braavos: connectWithBraavos,
     };
-  }, [clearWalletSession, setWalletSession, wallet, walletProviderKey]);
+    const reconnect = reconnectors[walletProviderKey];
+    if (!reconnect) return;
 
-  const onConnect = async (providerKey: WalletProviderKey) => {
+    reconnect()
+      .then((w) => setWalletSession(w as Parameters<typeof setWalletSession>[0], w.address, walletProviderKey))
+      .catch(() => clearWalletSession());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onConnect = async (providerKey: WalletProviderKey, connect: () => Promise<{ address: string }>) => {
     setStatus(null);
-    setIsConnecting(providerKey);
+    setConnecting(providerKey);
     try {
-      const session = await connectWallet(providerKey);
-      setWalletSession(session.wallet, session.address, session.providerKey);
-      document.cookie = `blindmarkets-wallet=${session.address}; path=/; SameSite=Lax`;
-      setStatus(`Connected ${providerLabel(providerKey)} wallet.`);
+      const w = await connect();
+      setWalletSession(w as Parameters<typeof setWalletSession>[0], w.address, providerKey);
+      document.cookie = `blindmarkets-wallet=${w.address}; path=/; SameSite=Lax`;
+      setStatus('Connected.');
     } catch (error) {
-      setStatus(`Wallet connection failed: ${String(error)}`);
+      setStatus(`Connection failed: ${String(error)}`);
     } finally {
-      setIsConnecting(null);
+      setConnecting(null);
     }
   };
 
@@ -67,8 +66,9 @@ export default function WalletConnect() {
             type="button"
             onClick={() => {
               clearWalletSession();
-              document.cookie = 'blindmarkets-wallet=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';
-              setStatus('Wallet session cleared on this device.');
+              document.cookie =
+                'blindmarkets-wallet=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';
+              setStatus('Wallet disconnected.');
             }}
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-text-secondary"
           >
@@ -78,30 +78,31 @@ export default function WalletConnect() {
       </div>
 
       <div className="mt-3 grid gap-2">
-        {WALLET_PROVIDERS.map((provider) => (
+        {PROVIDERS.map(({ key, label, connect, comingSoon }) => (
           <button
-            key={provider.key}
+            key={key}
             type="button"
-            onClick={() => onConnect(provider.key)}
-            disabled={isConnecting !== null}
-            className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-secondary disabled:opacity-50"
+            onClick={() => !comingSoon && onConnect(key, connect)}
+            disabled={connecting !== null || comingSoon}
+            title={comingSoon ? label : undefined}
+            className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-secondary disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isConnecting === provider.key ? `Connecting ${provider.label}...` : `Connect ${provider.label}`}
+            {connecting === key ? `Connecting…` : comingSoon ? 'Continue with Email' : label}
           </button>
         ))}
       </div>
 
       <div className="mt-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-text-secondary">
-        {walletAddress
-          ? `${providerLabel(walletProviderKey)}: ${truncateAddress(walletAddress)}`
-          : 'Not connected'}
+        {walletAddress ? truncateAddress(walletAddress) : 'Not connected'}
       </div>
+
+      {wallet && (
+        <div className="mt-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-text-secondary break-all">
+          {walletAddress}
+        </div>
+      )}
 
       {status ? <p className="mt-2 text-xs text-text-muted">{status}</p> : null}
     </div>
   );
-}
-
-function providerLabel(providerKey: WalletProviderKey | null): string {
-  return WALLET_PROVIDERS.find((provider) => provider.key === providerKey)?.label ?? 'Wallet';
 }
