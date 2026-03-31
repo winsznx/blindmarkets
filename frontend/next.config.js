@@ -36,7 +36,7 @@ const nextConfig = {
         if (isStarkzapIssuer) {
           const starkzapPinned = path.resolve(
             __dirname,
-            'node_modules/starkzap/node_modules/starknet/dist/index.js'
+            'node_modules/starkzap/node_modules/starknet/dist/index.mjs'
           );
           if (fs.existsSync(starkzapPinned)) {
             resource.request = starkzapPinned;
@@ -44,7 +44,7 @@ const nextConfig = {
           }
         }
 
-        resource.request = path.resolve(__dirname, 'node_modules/starknet/dist/index.js');
+        resource.request = path.resolve(__dirname, 'node_modules/starknet/dist/index.mjs');
       })
     );
 
