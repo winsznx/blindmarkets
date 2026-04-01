@@ -112,6 +112,45 @@ export default function ContractsPage() {
 
       <hr />
 
+      <h2>Supported tokens</h2>
+      <p>
+        Every token used in an intent must be whitelisted in the <strong>AssetRegistry</strong>{' '}
+        contract. <code>IntentRegistry.commit_intent</code> calls{' '}
+        <code>AssetRegistry.is_whitelisted</code> for both <code>asset_in</code> and{' '}
+        <code>asset_out</code> before accepting the intent — an unlisted token is rejected
+        on-chain.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Token</th><th>Symbol</th><th>Address (Sepolia)</th><th>Decimals</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>USD Coin</td>
+            <td><code>USDC</code></td>
+            <td><code className="text-xs">0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080</code></td>
+            <td>6</td>
+            <td>Pending whitelist</td>
+          </tr>
+          <tr>
+            <td>Wrapped BTC</td>
+            <td><code>WBTC</code></td>
+            <td>Bridge from Ethereum Sepolia via <a href="https://sepolia.starkgate.starknet.io" target="_blank" rel="noreferrer">Starkgate</a></td>
+            <td>8</td>
+            <td>Pending whitelist</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        To whitelist a token, the admin account calls <code>whitelist_asset</code> on the
+        AssetRegistry. Once whitelisted, solvers can fill intents for that pair and settlement will
+        execute the token transfer.
+      </p>
+
+      <hr />
+
       <h2>Source code</h2>
       <p>
         All contracts are written in Cairo and live in the <code>contracts/src/</code> directory
