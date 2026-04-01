@@ -19,7 +19,7 @@ function resolveExplorerUrl(address: string): string {
     process.env.NEXT_PUBLIC_STARKNET_NETWORK === 'mainnet'
       ? 'https://voyager.online'
       : 'https://sepolia.voyager.online';
-  return `${base}/account/${address}`;
+  return `${base}/contract/${address}`;
 }
 
 export default function AddressDisplay({ address, truncate = true }: AddressDisplayProps) {
