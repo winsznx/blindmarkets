@@ -503,9 +503,9 @@ export default function IntentComposer() {
             {showAdvanced ? (
               <div className="mt-4 space-y-4">
                 <div>
-                  <div className="flex items-center justify-between text-xs text-text-muted">
-                    <span>Min Output</span>
-                    <span className="text-text-secondary">
+                  <div className="flex items-center justify-between gap-2 text-xs text-text-muted">
+                    <span className="shrink-0">Min Output</span>
+                    <span className="truncate text-right text-text-secondary">
                       {formatIntegerString(draft.minOutput)} {draft.assetOut ? tokenSymbol(draft.assetOut) : ''}
                     </span>
                   </div>
