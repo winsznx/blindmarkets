@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import { RpcProvider } from 'starknet';
 import { MAX_INTENT_DEADLINE_MINUTES, useIntentStore } from '../state/useIntentStore';
 import { buildIntent, encryptIntentForGateway, generateNonce } from '../lib/intentCrypto';
 import type { IntentPayload } from '../lib/intentCrypto';
@@ -11,6 +12,43 @@ import {
   signIntentAuthorization,
   truncateAddress,
 } from '../lib/starkzap-wallet';
+
+const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> = {
+  '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d': { symbol: 'STRK', decimals: 18 },
+  '0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080': { symbol: 'USDC', decimals: 6 },
+};
+
+function tokenSymbol(address: string): string {
+  const normalized = address.toLowerCase().replace(/^0x0*/, '0x');
+  for (const [addr, info] of Object.entries(KNOWN_TOKENS)) {
+    if (addr.toLowerCase().replace(/^0x0*/, '0x') === normalized) return info.symbol;
+  }
+  return truncateAddress(address);
+}
+
+async function fetchTokenBalance(tokenAddress: string, walletAddress: string): Promise<string> {
+  const rpc = process.env.NEXT_PUBLIC_STARKNET_RPC ?? 'https://free-rpc.nethermind.io/sepolia-juno/rpc/v0_7';
+  const provider = new RpcProvider({ nodeUrl: rpc });
+  try {
+    const result = await provider.callContract({
+      contractAddress: tokenAddress,
+      entrypoint: 'balanceOf',
+      calldata: [walletAddress],
+    });
+    const raw = BigInt(result[0]);
+    const token = Object.entries(KNOWN_TOKENS).find(([addr]) =>
+      addr.toLowerCase().replace(/^0x0*/, '0x') === tokenAddress.toLowerCase().replace(/^0x0*/, '0x')
+    );
+    const decimals = token?.[1].decimals ?? 18;
+    const divisor = 10n ** BigInt(decimals);
+    const whole = raw / divisor;
+    const frac = raw % divisor;
+    const fracStr = frac.toString().padStart(decimals, '0').slice(0, 4).replace(/0+$/, '');
+    return fracStr ? `${whole}.${fracStr}` : `${whole}`;
+  } catch {
+    return '—';
+  }
+}
 
 const privacyOptions = [
   { id: 'public', label: 'Public', icon: '🔓', color: 'text-text-muted', description: 'Pair, size, and direction visible to solvers from submission.' },
@@ -38,6 +76,13 @@ export default function IntentComposer() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [assetInBalance, setAssetInBalance] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!walletAddress || !draft.assetIn) { setAssetInBalance(null); return; }
+    setAssetInBalance(null);
+    fetchTokenBalance(draft.assetIn, walletAddress).then(setAssetInBalance);
+  }, [walletAddress, draft.assetIn]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const minOutputValue = parseOptionalBigint(draft.minOutput);
   const amountValue = parseOptionalBigint(draft.amount);
@@ -304,18 +349,28 @@ export default function IntentComposer() {
         <div className="mt-6 grid gap-4">
           <div className="flex items-center gap-3">
             <div className="flex-1 rounded-xl border border-white/10 bg-white/5 p-4">
-              <p className="text-xs text-text-muted">From</p>
-              <div className="mt-2 flex items-center justify-between">
-                <input
-                  value={draft.assetIn}
-                  onChange={(event) => setDraft({ assetIn: event.target.value })}
-                  placeholder="0x..."
-                  className="w-full bg-transparent text-sm font-semibold outline-none"
-                />
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-text-muted">From</p>
+                {assetInBalance !== null && (
+                  <p className="text-xs text-text-muted">Balance: {assetInBalance} {draft.assetIn ? tokenSymbol(draft.assetIn) : ''}</p>
+                )}
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  {draft.assetIn && (
+                    <span className="text-sm font-semibold text-text-primary">{tokenSymbol(draft.assetIn)}</span>
+                  )}
+                  <input
+                    value={draft.assetIn}
+                    onChange={(event) => setDraft({ assetIn: event.target.value })}
+                    placeholder="0x token address"
+                    className="w-full bg-transparent text-xs text-text-muted outline-none"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => setDraft({ assetIn: draft.assetOut, assetOut: draft.assetIn })}
-                  className="text-xs text-text-secondary"
+                  className="shrink-0 text-xs text-text-secondary hover:text-text-primary"
                 >
                   Switch
                 </button>
@@ -324,12 +379,15 @@ export default function IntentComposer() {
             <div className="text-2xl text-text-muted">→</div>
             <div className="flex-1 rounded-xl border border-white/10 bg-white/5 p-4">
               <p className="text-xs text-text-muted">To</p>
-              <div className="mt-2 flex items-center justify-between">
+              <div className="mt-2 flex min-w-0 flex-col">
+                {draft.assetOut && (
+                  <span className="text-sm font-semibold text-text-primary">{tokenSymbol(draft.assetOut)}</span>
+                )}
                 <input
                   value={draft.assetOut}
                   onChange={(event) => setDraft({ assetOut: event.target.value })}
-                  placeholder="0x..."
-                  className="w-full bg-transparent text-sm font-semibold outline-none"
+                  placeholder="0x token address"
+                  className="w-full bg-transparent text-xs text-text-muted outline-none"
                 />
               </div>
             </div>
@@ -346,7 +404,7 @@ export default function IntentComposer() {
                   className="w-full bg-transparent text-2xl font-semibold outline-none"
                   placeholder="0"
                 />
-                <span className="text-xs text-text-secondary">{draft.assetIn ? truncateAddress(draft.assetIn) : '—'}</span>
+                <span className="text-xs text-text-secondary">{draft.assetIn ? tokenSymbol(draft.assetIn) : '—'}</span>
               </div>
               <p className="mt-1 text-xs text-text-muted">Authorization comes from the connected wallet.</p>
             </div>
