@@ -20,12 +20,26 @@ const nextConfig = {
     // an IIFE with no module exports, making WalletAccount etc. undefined at runtime.
     // Pin our app code to the CJS build directly.
     //
-    // starkzap has a nested starknet v9. Both v6 and v9 have `require("fs")` inside
-    // file-reading helper functions. These are never called in a browser wallet flow,
-    // but webpack still tries to resolve `fs` at bundle time. Stub it out.
-    config.resolve.alias['starknet'] = path.resolve(
-      __dirname,
-      'node_modules/starknet/dist/index.js'
+    // A global resolve.alias['starknet'] would also redirect starkzap's own starknet
+    // imports — starkzap ships a nested v9 that uses APIs (AbiParser2, etc.) absent
+    // from v6, causing "n.AbiParser2 is not a constructor" at runtime.
+    // Use NormalModuleReplacementPlugin instead, scoped to non-starkzap callers.
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(
+        /^starknet$/,
+        (resource) => {
+          if (
+            resource.context &&
+            resource.context.includes(path.join('node_modules', 'starkzap'))
+          ) {
+            return;
+          }
+          resource.request = path.resolve(
+            __dirname,
+            'node_modules/starknet/dist/index.js'
+          );
+        }
+      )
     );
 
     // Stub Node built-ins that appear in starknet v9 file-reading helpers.
