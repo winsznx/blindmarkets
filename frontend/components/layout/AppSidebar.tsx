@@ -56,12 +56,11 @@ export default function AppSidebar() {
         })}
       </nav>
 
-      <div className="mt-auto rounded-lg border border-white/10 bg-white/5 p-2 text-center xl:p-3 xl:text-left">
-        <p className="hidden text-[11px] uppercase tracking-[0.2em] text-text-muted xl:block">Wallet</p>
-        <div className="mt-1 hidden xl:block">
+      <div className="mt-auto space-y-2">
+        <div className="hidden xl:block">
           <WalletStatus compact />
         </div>
-        <div className="mt-2 hidden xl:block">
+        <div className="hidden xl:block">
           <NetworkBadge />
         </div>
       </div>
