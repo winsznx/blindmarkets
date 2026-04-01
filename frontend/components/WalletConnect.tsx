@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useIntentStore } from '../state/useIntentStore';
 import {
   connectWithEmail,
@@ -21,6 +22,7 @@ const PROVIDERS: Array<{
 ];
 
 export default function WalletConnect() {
+  const router = useRouter();
   const { wallet, walletAddress, walletProviderKey, setWalletSession, clearWalletSession } = useIntentStore();
   const [status, setStatus] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<WalletProviderKey | null>(null);
@@ -48,7 +50,8 @@ export default function WalletConnect() {
       const w = await connect();
       setWalletSession(w as Parameters<typeof setWalletSession>[0], w.address, providerKey);
       document.cookie = `blindmarkets-wallet=${w.address}; path=/; SameSite=Lax`;
-      setStatus('Connected.');
+      const next = new URLSearchParams(window.location.search).get('next') ?? '/desk';
+      router.push(next);
     } catch (error) {
       setStatus(`Connection failed: ${String(error)}`);
     } finally {

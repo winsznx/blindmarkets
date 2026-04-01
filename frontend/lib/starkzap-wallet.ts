@@ -60,7 +60,7 @@ export async function connectWithArgent(): Promise<ConnectedWallet> {
   const starknetWindow = (window as InjectedWindow).starknet_argentX;
   if (!starknetWindow) throw new Error('Argent X not installed');
 
-  await starknetWindow.enable();
+  const accounts = await starknetWindow.enable();
 
   const rpcProvider = new RpcProvider({ nodeUrl: STARKNET_RPC });
   const walletAccount = new WalletAccount(
@@ -68,7 +68,13 @@ export async function connectWithArgent(): Promise<ConnectedWallet> {
     starknetWindow as unknown as ConstructorParameters<typeof WalletAccount>[1],
   );
 
-  return buildInjectedWallet(walletAccount, rpcProvider);
+  const built = buildInjectedWallet(walletAccount, rpcProvider);
+  // WalletAccount reads selectedAddress from the injected window. Some wallet extensions
+  // (e.g. Ready Wallet / Argent) set selectedAddress asynchronously after enable() resolves.
+  // Fall back to the address returned by enable() if the WalletAccount didn't pick it up.
+  const address = built.address || starknetWindow.selectedAddress || accounts[0] || '';
+  if (!address) throw new Error('No account returned by Argent X');
+  return { ...built, address };
 }
 
 export async function connectWithBraavos(): Promise<ConnectedWallet> {
@@ -76,7 +82,7 @@ export async function connectWithBraavos(): Promise<ConnectedWallet> {
   const starknetWindow = (window as InjectedWindow).starknet_braavos;
   if (!starknetWindow) throw new Error('Braavos not installed');
 
-  await starknetWindow.enable();
+  const accounts = await starknetWindow.enable();
 
   const rpcProvider = new RpcProvider({ nodeUrl: STARKNET_RPC });
   const walletAccount = new WalletAccount(
@@ -84,7 +90,10 @@ export async function connectWithBraavos(): Promise<ConnectedWallet> {
     starknetWindow as unknown as ConstructorParameters<typeof WalletAccount>[1],
   );
 
-  return buildInjectedWallet(walletAccount, rpcProvider);
+  const built = buildInjectedWallet(walletAccount, rpcProvider);
+  const address = built.address || starknetWindow.selectedAddress || accounts[0] || '';
+  if (!address) throw new Error('No account returned by Braavos');
+  return { ...built, address };
 }
 
 // ---- Session stub — Starkzap manages session internally ----

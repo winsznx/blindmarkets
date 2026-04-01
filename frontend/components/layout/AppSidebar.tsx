@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BarChart2, Clock, Crosshair, ShieldAlert, Zap } from 'lucide-react';
+import { useUIStore } from '@/state/useUIStore';
 import BrandMark from '@/components/BrandMark';
 import NetworkBadge from '@/components/wallet/NetworkBadge';
 import WalletStatus from '@/components/wallet/WalletStatus';
@@ -24,7 +25,10 @@ const NAV_LINKS: NavLink[] = [
 
 export default function AppSidebar() {
   const pathname = usePathname();
+  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const solverModeEnabled = process.env.NEXT_PUBLIC_SOLVER_MODE === 'true';
+
+  if (!sidebarOpen) return null;
 
   return (
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-16 flex-col border-r border-white/10 bg-bg-base/90 px-2 py-4 backdrop-blur md:flex xl:w-[220px] xl:px-4 xl:py-6">
