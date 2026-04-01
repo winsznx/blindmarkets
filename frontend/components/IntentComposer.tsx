@@ -505,7 +505,7 @@ export default function IntentComposer() {
                   <div className="flex items-center justify-between text-xs text-text-muted">
                     <span>Min Output</span>
                     <span className="text-text-secondary">
-                      {formatIntegerString(draft.minOutput)} {draft.assetOut || ''}
+                      {formatIntegerString(draft.minOutput)} {draft.assetOut ? tokenSymbol(draft.assetOut) : ''}
                     </span>
                   </div>
                   <input
