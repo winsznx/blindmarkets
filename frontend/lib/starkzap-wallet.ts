@@ -27,7 +27,7 @@ type InjectedWindow = Window & {
 
 const STARKNET_RPC =
   process.env.NEXT_PUBLIC_STARKNET_RPC ??
-  'https://free-rpc.nethermind.io/sepolia-juno/rpc/v0_7';
+  'https://starknet-sepolia.drpc.org';
 
 function buildInjectedWallet(
   walletAccount: WalletAccount,

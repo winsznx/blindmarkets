@@ -45,13 +45,19 @@ invoke_or_fail() {
   echo ""
 }
 
-USDC="0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080"
+USDC="0x0512feac6339ff7889822cb5aa2a86c848e9d392bb0e3e237c008674feed8343"
+USDC_OLD="0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080"
 STRK="0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
 
 invoke_or_fail "USDC" \
   --contract-address "$ASSET_REGISTRY" \
   --function whitelist_asset \
   --calldata "$USDC" "0x55534443" "6"
+
+invoke_or_fail "USDC (old)" \
+  --contract-address "$ASSET_REGISTRY" \
+  --function whitelist_asset \
+  --calldata "$USDC_OLD" "0x55534443" "6"
 
 invoke_or_fail "STRK" \
   --contract-address "$ASSET_REGISTRY" \
@@ -68,7 +74,7 @@ else
 fi
 
 echo "Verifying..."
-for token in "$USDC" "$STRK"; do
+for token in "$USDC" "$USDC_OLD" "$STRK"; do
   result=$(sncast -j call --network sepolia \
     --contract-address "$ASSET_REGISTRY" \
     --function is_whitelisted \

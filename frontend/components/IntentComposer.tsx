@@ -15,6 +15,7 @@ import {
 
 const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> = {
   '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d': { symbol: 'STRK', decimals: 18 },
+  '0x0512feac6339ff7889822cb5aa2a86c848e9d392bb0e3e237c008674feed8343': { symbol: 'USDC', decimals: 6 },
   '0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080': { symbol: 'USDC', decimals: 6 },
 };
 
@@ -27,7 +28,7 @@ function tokenSymbol(address: string): string {
 }
 
 async function fetchTokenBalance(tokenAddress: string, walletAddress: string): Promise<string> {
-  const rpc = process.env.NEXT_PUBLIC_STARKNET_RPC ?? 'https://free-rpc.nethermind.io/sepolia-juno/rpc/v0_7';
+  const rpc = process.env.NEXT_PUBLIC_STARKNET_RPC ?? 'https://starknet-sepolia.drpc.org';
   const provider = new RpcProvider({ nodeUrl: rpc });
   try {
     const result = await provider.callContract({
