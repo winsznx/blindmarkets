@@ -14,9 +14,8 @@ const PROVIDERS: Array<{
   key: WalletProviderKey;
   label: string;
   connect: () => Promise<{ address: string }>;
-  comingSoon?: boolean;
 }> = [
-  { key: 'email', label: 'Email login coming soon — use Argent or Braavos', connect: connectWithEmail, comingSoon: true },
+  { key: 'email', label: 'Continue with Email', connect: connectWithEmail },
   { key: 'argent', label: 'Connect Argent', connect: connectWithArgent },
   { key: 'braavos', label: 'Connect Braavos', connect: connectWithBraavos },
 ];
@@ -78,16 +77,15 @@ export default function WalletConnect() {
       </div>
 
       <div className="mt-3 grid gap-2">
-        {PROVIDERS.map(({ key, label, connect, comingSoon }) => (
+        {PROVIDERS.map(({ key, label, connect }) => (
           <button
             key={key}
             type="button"
-            onClick={() => !comingSoon && onConnect(key, connect)}
-            disabled={connecting !== null || comingSoon}
-            title={comingSoon ? label : undefined}
+            onClick={() => onConnect(key, connect)}
+            disabled={connecting !== null}
             className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-secondary disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {connecting === key ? `Connecting…` : comingSoon ? 'Continue with Email' : label}
+            {connecting === key ? `Connecting…` : label}
           </button>
         ))}
       </div>

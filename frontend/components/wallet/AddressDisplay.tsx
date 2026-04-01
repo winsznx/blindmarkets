@@ -14,10 +14,12 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function resolveExplorerBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_STARKNET_NETWORK === 'mainnet'
-    ? 'https://starkscan.co'
-    : 'https://sepolia.starkscan.co';
+function resolveExplorerUrl(address: string): string {
+  const base =
+    process.env.NEXT_PUBLIC_STARKNET_NETWORK === 'mainnet'
+      ? 'https://voyager.online'
+      : 'https://sepolia.voyager.online';
+  return `${base}/account/${address}`;
 }
 
 export default function AddressDisplay({ address, truncate = true }: AddressDisplayProps) {
@@ -35,11 +37,11 @@ export default function AddressDisplay({ address, truncate = true }: AddressDisp
         <Copy className="h-3 w-3" />
       </button>
       <a
-        href={`${resolveExplorerBaseUrl()}/contract/${address}`}
+        href={resolveExplorerUrl(address)}
         target="_blank"
         rel="noreferrer"
         className="rounded border border-white/10 bg-white/5 p-1 hover:text-text-primary"
-        aria-label="Open on Starkscan"
+        aria-label="View on Voyager"
       >
         <ExternalLink className="h-3 w-3" />
       </a>
