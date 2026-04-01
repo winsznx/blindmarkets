@@ -1,12 +1,9 @@
 'use client';
 
-import { OnboardStrategy } from 'starkzap';
 import { RpcProvider, WalletAccount, typedData } from 'starknet';
 import type { Call } from 'starknet';
 import type { IntentPayload } from '@/lib/intentCrypto';
-import { starkzap } from './starkzap';
 
-export type { StarkzapWallet } from './starkzap';
 export type WalletProviderKey = 'email' | 'argent' | 'braavos';
 
 export type ConnectedWallet = {
@@ -50,22 +47,12 @@ function buildInjectedWallet(
   };
 }
 
-// ---- Starkzap connect functions ----
+// ---- Connect functions ----
 
 export async function connectWithEmail(): Promise<ConnectedWallet> {
-  const { wallet } = await starkzap.onboard({
-    strategy: OnboardStrategy.Privy,
-    privy: {
-      resolve: async () => {
-        throw new Error(
-          'Email onboarding requires Privy configuration. Set NEXT_PUBLIC_PRIVY_APP_ID in .env.local.',
-        );
-      },
-    },
-    accountPreset: 'argentXV050',
-    deploy: 'if_needed',
-  });
-  return wallet as unknown as ConnectedWallet;
+  throw new Error(
+    'Email login requires Privy configuration. Set NEXT_PUBLIC_PRIVY_APP_ID in .env.local.',
+  );
 }
 
 export async function connectWithArgent(): Promise<ConnectedWallet> {
