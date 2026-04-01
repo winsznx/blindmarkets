@@ -224,11 +224,29 @@ export default function IntentComposer() {
         throw new Error(await extractGatewayError(storageResponse));
       }
 
+      const privacyModeValue = { public: 0, 'hidden-amount': 1, 'hidden-direction': 2 }[intent.privacyMode] ?? 0;
+      const minOutputLow = intent.minOutput & ((1n << 128n) - 1n);
+      const minOutputHigh = intent.minOutput >> 128n;
       const tx = await activeWallet.execute(
         [{
           contractAddress: process.env.NEXT_PUBLIC_INTENT_REGISTRY!,
           entrypoint: 'commit_intent',
-          calldata: [intent.intentHash, '0x0', `0x${intent.deadline.toString(16)}`],
+          calldata: [
+            intent.intentId,
+            intent.userAddress,
+            intent.intentHash,
+            intent.nonce,
+            intent.assetIn,
+            intent.assetOut,
+            intent.amountCommitment,
+            `0x${minOutputLow.toString(16)}`,
+            `0x${minOutputHigh.toString(16)}`,
+            `0x${intent.maxFeeBps.toString(16)}`,
+            `0x${intent.deadline.toString(16)}`,
+            `0x${privacyModeValue.toString(16)}`,
+            `0x${authorization.signature.length.toString(16)}`,
+            ...authorization.signature,
+          ],
         }],
         { feeMode: 'sponsored' },
       );
