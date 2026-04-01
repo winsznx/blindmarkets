@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Result};
 use serde::Serialize;
 use starknet::accounts::{Account, SingleOwnerAccount};
-use starknet::core::types::{Call, FieldElement};
+use starknet::accounts::Call;
+use starknet::core::types::{BlockId, BlockTag, FieldElement, FunctionCall};
 use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
 use starknet::signers::{LocalWallet, SigningKey};
+use std::sync::Arc;
 
 #[derive(Clone, Serialize)]
 pub struct StarknetConfig {
@@ -19,7 +21,8 @@ pub struct StarknetConfig {
 
 #[derive(Clone)]
 pub struct StarknetClient {
-    account: SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
+    account: SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>,
+    provider: Arc<JsonRpcClient<HttpTransport>>,
     batch_auction_address: FieldElement,
     batch_settlement_address: FieldElement,
     solver_bond_address: FieldElement,
@@ -27,12 +30,12 @@ pub struct StarknetClient {
 
 impl StarknetClient {
     pub fn new(config: StarknetConfig) -> Result<Self> {
-        let provider = JsonRpcClient::new(HttpTransport::new(config.rpc_url));
+        let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(config.rpc_url)));
         let account_address = parse_field_element(&config.account_address, "account_address")?;
         let chain_id = parse_field_element(&config.chain_id, "chain_id")?;
         let private_key = parse_field_element(&config.private_key, "private_key")?;
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(private_key));
-        let account = SingleOwnerAccount::new(provider, signer, account_address, chain_id);
+        let account = SingleOwnerAccount::new(Arc::clone(&provider), signer, account_address, chain_id);
         let batch_auction_address =
             parse_field_element(&config.batch_auction_address, "batch_auction_address")?;
         let batch_settlement_address =
@@ -42,6 +45,7 @@ impl StarknetClient {
 
         Ok(Self {
             account,
+            provider,
             batch_auction_address,
             batch_settlement_address,
             solver_bond_address,
@@ -152,13 +156,13 @@ impl StarknetClient {
     }
 
     pub async fn get_solver_info(&self, solver_address: &str) -> Result<SolverInfo> {
-        let call = Call {
-            to: self.solver_bond_address,
-            selector: selector_from_name("get_solver_info")?,
+        let call = FunctionCall {
+            contract_address: self.solver_bond_address,
+            entry_point_selector: selector_from_name("get_solver_info")?,
             calldata: vec![parse_field_element(solver_address, "solver_address")?],
         };
 
-        let response = self.account.provider().call(call, None).await?;
+        let response = self.provider.call(call, BlockId::Tag(BlockTag::Latest)).await?;
         if response.len() < 12 {
             return Err(anyhow!("Invalid solver info response length"));
         }
