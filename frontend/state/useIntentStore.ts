@@ -70,8 +70,8 @@ function resolveDefaultDeadlineMinutes(): number {
 
 function sanitizeIntentDraft(draft?: Partial<IntentDraft>): IntentDraft {
   return {
-    assetIn: draft?.assetIn ?? defaultDraft.assetIn,
-    assetOut: draft?.assetOut ?? defaultDraft.assetOut,
+    assetIn: draft?.assetIn || defaultDraft.assetIn,
+    assetOut: draft?.assetOut || defaultDraft.assetOut,
     amount: draft?.amount ?? defaultDraft.amount,
     minOutput: draft?.minOutput ?? defaultDraft.minOutput,
     maxFeeBps: draft?.maxFeeBps ?? defaultDraft.maxFeeBps,

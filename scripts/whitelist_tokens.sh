@@ -16,51 +16,62 @@ if [ -z "$DEPLOYER_ADDRESS" ] || [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
   exit 1
 fi
 
-ASSET_REGISTRY="0x061b3c120cd166e1c523509a1ee153060b8afeab4f534c28d55d24de61bd4246"
+# New AssetRegistry from 2026-04-01 redeploy — admin is DEPLOYER_ADDRESS
+ASSET_REGISTRY="${ASSET_REGISTRY_ADDRESS:-0x0676083bbbb6af43f48458e7fdab60d13a97f305b355f46da42f390dbd5eed55}"
 ACCOUNT_NAME="bm_deployer"
 
-# Import deployer account (idempotent)
+echo "Using AssetRegistry: $ASSET_REGISTRY"
+echo ""
+
+echo "Importing deployer account..."
 sncast account import \
   --name "$ACCOUNT_NAME" \
   --address "$DEPLOYER_ADDRESS" \
   --private-key "$DEPLOYER_PRIVATE_KEY" \
-  --type oz \
+  --type ready \
   --network sepolia 2>/dev/null || true
 
-echo "Whitelisting tokens in AssetRegistry ($ASSET_REGISTRY)..."
-echo ""
+invoke_or_fail() {
+  local label="$1"; shift
+  echo "Whitelisting $label..."
+  output=$(sncast -j --account "$ACCOUNT_NAME" invoke --network sepolia "$@" 2>&1) || true
+  if echo "$output" | grep -q '"type":"error"'; then
+    echo "ERROR whitelisting $label:"
+    echo "$output" | python3 -c "import sys,json; e=json.loads(sys.stdin.read()); print(e.get('error','unknown'))" 2>/dev/null || echo "$output"
+    exit 1
+  fi
+  tx=$(echo "$output" | python3 -c "import sys,json; [print(json.loads(l).get('transaction_hash','')) for l in sys.stdin if 'transaction_hash' in l]" 2>/dev/null)
+  echo "✓ $label whitelisted — tx: $tx"
+  echo ""
+}
 
-# ── USDC (Starkgate Sepolia) ─────────────────────────────────────────────────
-# Symbol: USDC as felt252 = 0x55534443
 USDC="0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080"
-echo "Whitelisting USDC ($USDC)..."
-sncast invoke \
-  --account "$ACCOUNT_NAME" \
+STRK="0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+
+invoke_or_fail "USDC" \
   --contract-address "$ASSET_REGISTRY" \
   --function whitelist_asset \
-  --calldata "$USDC" "0x55534443" "6" \
-  --network sepolia
-echo "✓ USDC whitelisted"
-echo ""
+  --calldata "$USDC" "0x55534443" "6"
 
-# ── WBTC ─────────────────────────────────────────────────────────────────────
-# Set WBTC_ADDRESS in scripts/.env once you have the Starknet Sepolia address.
-# Bridge from Ethereum Sepolia at https://sepolia.starkgate.starknet.io
+invoke_or_fail "STRK" \
+  --contract-address "$ASSET_REGISTRY" \
+  --function whitelist_asset \
+  --calldata "$STRK" "0x5354524b" "18"
+
 if [ -n "$WBTC_ADDRESS" ]; then
-  # Symbol: WBTC as felt252 = 0x57425443
-  echo "Whitelisting WBTC ($WBTC_ADDRESS)..."
-  sncast invoke \
-    --account "$ACCOUNT_NAME" \
+  invoke_or_fail "WBTC" \
     --contract-address "$ASSET_REGISTRY" \
     --function whitelist_asset \
-    --calldata "$WBTC_ADDRESS" "0x57425443" "8" \
-    --network sepolia
-  echo "✓ WBTC whitelisted"
+    --calldata "$WBTC_ADDRESS" "0x57425443" "8"
 else
-  echo "WBTC_ADDRESS not set in scripts/.env — skipping WBTC."
-  echo "Bridge WBTC at https://sepolia.starkgate.starknet.io then set WBTC_ADDRESS."
+  echo "WBTC_ADDRESS not set — skipping."
 fi
 
-echo ""
-echo "Done. Verify with:"
-echo "  sncast call --contract-address $ASSET_REGISTRY --function is_whitelisted --calldata $USDC --network sepolia"
+echo "Verifying..."
+for token in "$USDC" "$STRK"; do
+  result=$(sncast -j call --network sepolia \
+    --contract-address "$ASSET_REGISTRY" \
+    --function is_whitelisted \
+    --calldata "$token" 2>/dev/null | python3 -c "import sys,json; d=[json.loads(l) for l in sys.stdin]; r=[x for x in d if 'response' in x]; print(r[0]['response'][0] if r else '?')" 2>/dev/null)
+  echo "$token => whitelisted: $result"
+done
