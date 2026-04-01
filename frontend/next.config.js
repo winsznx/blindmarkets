@@ -32,6 +32,11 @@ const nextConfig = {
             resource.context &&
             resource.context.includes(path.join('node_modules', 'starkzap'))
           ) {
+            // starkzap's nested starknet v9 also ships browser→IIFE. Pin it to CJS.
+            resource.request = path.resolve(
+              __dirname,
+              'node_modules/starkzap/node_modules/starknet/dist/index.js'
+            );
             return;
           }
           resource.request = path.resolve(
