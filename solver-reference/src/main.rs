@@ -129,8 +129,8 @@ async fn main() -> Result<()> {
                     intent_map.insert(intent.intent_id.clone(), intent);
                 }
                 let mut ordered_intents = Vec::new();
-                for intent_id in ordered_intent_ids {
-                    if let Some(intent) = intent_map.remove(&intent_id) {
+                for intent_id in &ordered_intent_ids {
+                    if let Some(intent) = intent_map.remove(intent_id.as_str()) {
                         ordered_intents.push(intent);
                     } else {
                         tracing::warn!("Missing intent {} for batch {}", intent_id, batch_id);

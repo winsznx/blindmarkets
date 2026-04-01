@@ -226,7 +226,7 @@ impl IntentMonitor {
 
         let cipher = Aes256Gcm::new_from_slice(&shared_secret)?;
         let nonce = Nonce::from_slice(&ciphertext[..12]);
-        let plaintext = cipher.decrypt(nonce, &ciphertext[12..])?;
+        let plaintext = cipher.decrypt(nonce, &ciphertext[12..]).map_err(|e| anyhow::anyhow!("Decryption failed: {:?}", e))?;
 
         let decrypted: DecryptedIntent = serde_json::from_slice(&plaintext)?;
         Ok(decrypted)

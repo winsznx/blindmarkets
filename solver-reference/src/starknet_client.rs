@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Result};
 use serde::Serialize;
-use starknet::accounts::{Account, SingleOwnerAccount};
+use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
 use starknet::accounts::Call;
 use starknet::core::types::{BlockId, BlockTag, FieldElement, FunctionCall};
+use url::Url;
 use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
 use starknet::signers::{LocalWallet, SigningKey};
@@ -30,12 +31,13 @@ pub struct StarknetClient {
 
 impl StarknetClient {
     pub fn new(config: StarknetConfig) -> Result<Self> {
-        let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(config.rpc_url)));
+        let rpc_url = Url::parse(&config.rpc_url).map_err(|e| anyhow!("Invalid RPC URL: {}", e))?;
+        let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(rpc_url)));
         let account_address = parse_field_element(&config.account_address, "account_address")?;
         let chain_id = parse_field_element(&config.chain_id, "chain_id")?;
         let private_key = parse_field_element(&config.private_key, "private_key")?;
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(private_key));
-        let account = SingleOwnerAccount::new(Arc::clone(&provider), signer, account_address, chain_id);
+        let account = SingleOwnerAccount::new(Arc::clone(&provider), signer, account_address, chain_id, ExecutionEncoding::New);
         let batch_auction_address =
             parse_field_element(&config.batch_auction_address, "batch_auction_address")?;
         let batch_settlement_address =
@@ -171,11 +173,11 @@ impl StarknetClient {
             solver: format!("{:#x}", response[0]),
             bond_amount: format_u256(response[1], response[2]),
             locked: response[3] != FieldElement::ZERO,
-            successful_settlements: response[4].to_u128().unwrap_or(0) as u32,
-            failed_settlements: response[5].to_u128().unwrap_or(0) as u32,
-            slash_count_30d: response[6].to_u128().unwrap_or(0) as u8,
-            last_slash_timestamp: response[7].to_u128().unwrap_or(0) as u64,
-            withdrawal_request_time: response[8].to_u128().unwrap_or(0) as u64,
+            successful_settlements: felt_to_u128(response[4]) as u32,
+            failed_settlements: felt_to_u128(response[5]) as u32,
+            slash_count_30d: felt_to_u128(response[6]) as u8,
+            last_slash_timestamp: felt_to_u128(response[7]) as u64,
+            withdrawal_request_time: felt_to_u128(response[8]) as u64,
             withdrawal_request_amount: format_u256(response[9], response[10]),
             blacklisted: response[11] != FieldElement::ZERO,
         })
@@ -211,9 +213,14 @@ fn parse_field_element(value: &str, label: &str) -> Result<FieldElement> {
     }
 }
 
+fn felt_to_u128(fe: FieldElement) -> u128 {
+    let hex = format!("{:#x}", fe);
+    u128::from_str_radix(hex.trim_start_matches("0x"), 16).unwrap_or(0)
+}
+
 fn format_u256(low: FieldElement, high: FieldElement) -> String {
-    let low_u128 = low.to_u128().unwrap_or(0);
-    let high_u128 = high.to_u128().unwrap_or(0);
+    let low_u128 = felt_to_u128(low);
+    let high_u128 = felt_to_u128(high);
     if high_u128 == 0 {
         format!("{:#x}", low_u128)
     } else {
