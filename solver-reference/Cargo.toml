@@ -15,7 +15,7 @@ reqwest = { version = "0.11", features = ["json"] }
 starknet = "0.9"
 hex = "0.4"
 chrono = "0.4"
-tokio-tungstenite = "0.21"
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 futures = "0.3"
 sha3 = "0.10"
 aes-gcm = "0.10"

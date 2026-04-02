@@ -218,8 +218,14 @@ async fn main() -> Result<()> {
                     }
                 }
             }
+            else => {
+                tracing::warn!("All solver channels closed; restarting in 5s...");
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                break;
+            }
         }
     }
+    Ok(())
 }
 
 async fn fetch_batch_intent_order(config: &SolverConfig, batch_id: &str) -> Result<Vec<String>> {
