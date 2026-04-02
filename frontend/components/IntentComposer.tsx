@@ -9,6 +9,8 @@ import { buildIntent, encryptIntentForGateway, generateNonce } from '../lib/inte
 import type { IntentPayload } from '../lib/intentCrypto';
 import {
   buildCancelIntentCall,
+  connectWithArgent,
+  connectWithBraavos,
   signIntentAuthorization,
   truncateAddress,
 } from '../lib/starkzap-wallet';
@@ -84,6 +86,20 @@ export default function IntentComposer() {
     setAssetInBalance(null);
     fetchTokenBalance(draft.assetIn, walletAddress).then(setAssetInBalance);
   }, [walletAddress, draft.assetIn]);
+
+  useEffect(() => {
+    if (wallet || !walletProviderKey || !walletAddress) return;
+    const reconnectors: Partial<Record<typeof walletProviderKey, () => Promise<{ address: string }>>> = {
+      argent: connectWithArgent,
+      braavos: connectWithBraavos,
+    };
+    const reconnect = reconnectors[walletProviderKey];
+    if (!reconnect) return;
+    reconnect()
+      .then((w) => setWalletSession(w as Parameters<typeof setWalletSession>[0], w.address, walletProviderKey))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const minOutputValue = parseOptionalBigint(draft.minOutput);
   const amountValue = parseOptionalBigint(draft.amount);
