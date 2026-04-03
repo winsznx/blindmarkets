@@ -114,6 +114,11 @@ impl IntentMonitor {
 
         let request = tokio_tungstenite::tungstenite::http::Request::builder()
             .uri(&ws_url)
+            .header("Host", ws_url.split('/').nth(2).unwrap_or(""))
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Sec-WebSocket-Key", tokio_tungstenite::tungstenite::handshake::client::generate_key())
             .header(self.config.gateway_api_key_header.as_str(), self.config.gateway_api_key.as_str())
             .body(())?;
 
