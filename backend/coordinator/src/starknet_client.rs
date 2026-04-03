@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use starknet::accounts::{Account, Call, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
-use starknet::core::types::{BlockId, BlockTag, FieldElement, FunctionCall};
+use starknet::accounts::{Account, Call, ExecutionEncoding, SingleOwnerAccount};
+use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall};
 use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
 use starknet::signers::{LocalWallet, SigningKey};
@@ -37,7 +37,7 @@ impl StarknetConfig {
 
 pub struct StarknetClient {
     account: SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
-    batch_auction_address: FieldElement,
+    batch_auction_address: Felt,
 }
 
 impl StarknetClient {
@@ -45,9 +45,9 @@ impl StarknetClient {
         let rpc_url = reqwest::Url::parse(&config.rpc_url)
             .map_err(|e| anyhow!("Invalid rpc_url: {}", e))?;
         let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
-        let account_address = parse_field_element(&config.account_address, "account_address")?;
-        let chain_id = parse_field_element(&config.chain_id, "chain_id")?;
-        let private_key = parse_field_element(&config.private_key, "private_key")?;
+        let account_address = parse_felt(&config.account_address, "account_address")?;
+        let chain_id = parse_felt(&config.chain_id, "chain_id")?;
+        let private_key = parse_felt(&config.private_key, "private_key")?;
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(private_key));
         let account = SingleOwnerAccount::new(
             provider,
@@ -56,8 +56,7 @@ impl StarknetClient {
             chain_id,
             ExecutionEncoding::New,
         );
-        let batch_auction_address =
-            parse_field_element(&config.batch_auction_address, "batch_auction_address")?;
+        let batch_auction_address = parse_felt(&config.batch_auction_address, "batch_auction_address")?;
         Ok(Self {
             account,
             batch_auction_address,
@@ -73,9 +72,9 @@ impl StarknetClient {
         info!("Creating batch {} on Starknet", batch_id);
 
         let calldata = vec![
-            FieldElement::from(batch_id as u128),
-            FieldElement::from(close_time as u128),
-            FieldElement::from(intent_count as u128),
+            Felt::from(batch_id as u128),
+            Felt::from(close_time as u128),
+            Felt::from(intent_count as u128),
         ];
 
         let call = Call {
@@ -84,7 +83,7 @@ impl StarknetClient {
             calldata,
         };
 
-        let tx = self.account.execute(vec![call]).send().await?;
+        let tx = self.account.execute_v1(vec![call]).send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
@@ -94,10 +93,10 @@ impl StarknetClient {
         let call = Call {
             to: self.batch_auction_address,
             selector: selector_from_name("finalize_auction")?,
-            calldata: vec![FieldElement::from(batch_id as u128)],
+            calldata: vec![Felt::from(batch_id as u128)],
         };
 
-        let tx = self.account.execute(vec![call]).send().await?;
+        let tx = self.account.execute_v1(vec![call]).send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
@@ -107,7 +106,7 @@ impl StarknetClient {
         let call = FunctionCall {
             contract_address: self.batch_auction_address,
             entry_point_selector: selector_from_name("get_winning_solver")?,
-            calldata: vec![FieldElement::from(batch_id as u128)],
+            calldata: vec![Felt::from(batch_id as u128)],
         };
 
         let response = self
@@ -115,22 +114,22 @@ impl StarknetClient {
             .provider()
             .call(call, BlockId::Tag(BlockTag::Latest))
             .await?;
-        let solver = response.get(0).cloned().unwrap_or(FieldElement::ZERO);
+        let solver = response.into_iter().next().unwrap_or(Felt::ZERO);
         Ok(format!("{:#x}", solver))
     }
 }
 
-fn selector_from_name(name: &str) -> Result<FieldElement> {
+fn selector_from_name(name: &str) -> Result<Felt> {
     starknet::core::utils::get_selector_from_name(name)
         .map_err(|e| anyhow!("Failed to derive selector for {}: {}", name, e))
 }
 
-fn parse_field_element(value: &str, label: &str) -> Result<FieldElement> {
-    if let Some(stripped) = value.strip_prefix("0x") {
-        FieldElement::from_hex_be(stripped)
+fn parse_felt(value: &str, label: &str) -> Result<Felt> {
+    if value.starts_with("0x") || value.starts_with("0X") {
+        Felt::from_hex(value)
             .map_err(|e| anyhow!("Invalid {} hex: {}", label, e))
     } else {
-        FieldElement::from_dec_str(value)
+        Felt::from_dec_str(value)
             .map_err(|e| anyhow!("Invalid {} decimal: {}", label, e))
     }
 }

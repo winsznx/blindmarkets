@@ -10,7 +10,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::str::FromStr;
 use std::time::Instant;
-use starknet_crypto::{FieldElement, pedersen_hash};
+use starknet::core::types::Felt;
+use starknet_crypto::pedersen_hash;
 use sqlx::types::BigDecimal;
 use sqlx::{QueryBuilder, Postgres, FromRow};
 
@@ -1911,17 +1912,17 @@ where
     }
 }
 
-fn field_element_from_hex(value: &str, label: &str) -> Result<FieldElement, StatusCode> {
+fn field_element_from_hex(value: &str, label: &str) -> Result<Felt, StatusCode> {
     if !value.starts_with("0x") {
         tracing::warn!("{} must start with 0x", label);
         return Err(StatusCode::BAD_REQUEST);
     }
-    FieldElement::from_hex_be(value)
+    Felt::from_hex(value)
         .map_err(|_| StatusCode::BAD_REQUEST)
 }
 
-fn compute_amount_commitment(amount: u128, nonce_hex: &str) -> Result<FieldElement, StatusCode> {
-    let amount_fe = FieldElement::from(amount);
+fn compute_amount_commitment(amount: u128, nonce_hex: &str) -> Result<Felt, StatusCode> {
+    let amount_fe = Felt::from(amount);
     let nonce_fe = field_element_from_hex(nonce_hex, "nonce")?;
     Ok(pedersen_hash(&amount_fe, &nonce_fe))
 }
@@ -1930,13 +1931,13 @@ fn compute_intent_hash(
     user_address_hex: &str,
     asset_in_hex: &str,
     asset_out_hex: &str,
-    amount_commitment: FieldElement,
+    amount_commitment: Felt,
     min_output: u128,
     max_fee_bps: u16,
     deadline: u64,
     privacy_mode: u8,
     nonce_hex: &str,
-) -> Result<FieldElement, StatusCode> {
+) -> Result<Felt, StatusCode> {
     let user = field_element_from_hex(user_address_hex, "user_address")?;
     let asset_in = field_element_from_hex(asset_in_hex, "asset_in")?;
     let asset_out = field_element_from_hex(asset_out_hex, "asset_out")?;
@@ -1946,16 +1947,16 @@ fn compute_intent_hash(
     hash = pedersen_hash(&hash, &asset_out);
     hash = pedersen_hash(&hash, &amount_commitment);
 
-    let min_low = FieldElement::from(min_output);
-    let min_high = FieldElement::ZERO;
+    let min_low = Felt::from(min_output);
+    let min_high = Felt::ZERO;
     let min_output_hash = pedersen_hash(&min_low, &min_high);
     hash = pedersen_hash(&hash, &min_output_hash);
 
-    let max_fee = FieldElement::from(max_fee_bps as u128);
+    let max_fee = Felt::from(max_fee_bps as u128);
     hash = pedersen_hash(&hash, &max_fee);
-    let deadline_fe = FieldElement::from(deadline as u128);
+    let deadline_fe = Felt::from(deadline as u128);
     hash = pedersen_hash(&hash, &deadline_fe);
-    let privacy = FieldElement::from(privacy_mode as u128);
+    let privacy = Felt::from(privacy_mode as u128);
     hash = pedersen_hash(&hash, &privacy);
     hash = pedersen_hash(&hash, &nonce);
 
@@ -1965,8 +1966,8 @@ fn compute_intent_hash(
 fn compute_intent_id(
     user_address_hex: &str,
     nonce_hex: &str,
-    intent_hash: FieldElement,
-) -> Result<FieldElement, StatusCode> {
+    intent_hash: Felt,
+) -> Result<Felt, StatusCode> {
     let user = field_element_from_hex(user_address_hex, "user_address")?;
     let nonce = field_element_from_hex(nonce_hex, "nonce")?;
     let inner = pedersen_hash(&user, &nonce);
