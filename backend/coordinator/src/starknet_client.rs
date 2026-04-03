@@ -83,7 +83,9 @@ impl StarknetClient {
             calldata,
         };
 
-        let tx = self.account.execute_v1(vec![call]).send().await?;
+        let tx = self.account.execute_v1(vec![call])
+            .max_fee(Felt::from(1_000_000_000_000_000u128))
+            .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
@@ -96,7 +98,9 @@ impl StarknetClient {
             calldata: vec![Felt::from(batch_id as u128)],
         };
 
-        let tx = self.account.execute_v1(vec![call]).send().await?;
+        let tx = self.account.execute_v1(vec![call])
+            .max_fee(Felt::from(1_000_000_000_000_000u128))
+            .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
