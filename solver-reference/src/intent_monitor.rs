@@ -98,14 +98,15 @@ pub enum GatewayMessage {
 pub struct IntentMonitor {
     config: SolverConfig,
     intent_sender: mpsc::Sender<IntentEnvelope>,
-    batch_sender: mpsc::Sender<String>,
+    // (batch_id, intent_count) — count lets the main loop skip API calls for empty batches
+    batch_sender: mpsc::Sender<(String, i32)>,
 }
 
 impl IntentMonitor {
     pub fn new(
         config: SolverConfig,
         intent_sender: mpsc::Sender<IntentEnvelope>,
-        batch_sender: mpsc::Sender<String>,
+        batch_sender: mpsc::Sender<(String, i32)>,
     ) -> Self {
         Self { config, intent_sender, batch_sender }
     }
@@ -199,7 +200,7 @@ impl IntentMonitor {
             }
             GatewayMessage::BatchClosed { batch_id, intent_count, .. } => {
                 tracing::info!("Batch {} closed with {} intents", batch_id, intent_count);
-                if self.batch_sender.send(batch_id).await.is_err() {
+                if self.batch_sender.send((batch_id, intent_count)).await.is_err() {
                     tracing::error!("Failed to forward batch close signal");
                 }
             }

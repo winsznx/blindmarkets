@@ -110,19 +110,16 @@ async fn main() -> Result<()> {
     let proof_provider = config.proof_service_url.clone()
         .map(|url| ProofProvider::new(url, config.proof_service_api_key.clone()));
 
-    let mut pending_by_batch: HashMap<String, Vec<crate::intent_monitor::DecryptedIntent>> = HashMap::new();
+    // Keyed by intent_id — survives batch reassignment between new_intent and batch_closed.
+    let mut pending_intents: HashMap<String, crate::intent_monitor::DecryptedIntent> = HashMap::new();
 
     loop {
         tokio::select! {
             Some(envelope) = intent_rx.recv() => {
-                pending_by_batch
-                    .entry(envelope.batch_id)
-                    .or_default()
-                    .push(envelope.intent);
+                pending_intents.insert(envelope.intent.intent_id.clone(), envelope.intent);
             }
-            Some(batch_id) = batch_rx.recv() => {
-                let intents = pending_by_batch.remove(&batch_id).unwrap_or_default();
-                if intents.is_empty() {
+            Some((batch_id, intent_count)) = batch_rx.recv() => {
+                if intent_count == 0 {
                     info!("Batch {} closed with no intents", batch_id);
                     continue;
                 }
@@ -134,13 +131,10 @@ async fn main() -> Result<()> {
                         continue;
                     }
                 };
-                let mut intent_map = std::collections::HashMap::new();
-                for intent in intents {
-                    intent_map.insert(intent.intent_id.clone(), intent);
-                }
+
                 let mut ordered_intents = Vec::new();
                 for intent_id in &ordered_intent_ids {
-                    if let Some(intent) = intent_map.remove(intent_id.as_str()) {
+                    if let Some(intent) = pending_intents.remove(intent_id.as_str()) {
                         ordered_intents.push(intent);
                     } else {
                         tracing::warn!("Missing intent {} for batch {}", intent_id, batch_id);
@@ -292,7 +286,7 @@ async fn build_proofs(
         fill_map.insert(fill.intent_id.clone(), fill);
     }
     let mut proofs = Vec::with_capacity(intents.len());
-    for (index, intent) in intents.iter().enumerate() {
+    for (_index, intent) in intents.iter().enumerate() {
         if intent.privacy_mode == 0 {
             proofs.push("0x0".to_string());
             continue;
