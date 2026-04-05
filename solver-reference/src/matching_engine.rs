@@ -2,13 +2,20 @@ use crate::intent_monitor::{DecryptedIntent, Fill};
 
 pub struct MatchingEngine {
     internal_inventory: std::collections::HashMap<String, u128>,
+    accept_all: bool,
 }
 
 impl MatchingEngine {
     pub fn new() -> Self {
         Self {
             internal_inventory: std::collections::HashMap::new(),
+            accept_all: false,
         }
+    }
+
+    pub fn with_accept_all(mut self) -> Self {
+        self.accept_all = true;
+        self
     }
 
     pub fn can_fill_internally(&self, intent: &DecryptedIntent) -> bool {
@@ -22,12 +29,30 @@ impl MatchingEngine {
     }
 
     pub fn create_internal_fill(&self, intent: &DecryptedIntent) -> Option<Fill> {
+        if self.accept_all {
+            // Demo/test mode: fill every intent at min_output price.
+            let execution_price = if intent.amount > 0 {
+                (intent.min_output * 1_000_000) / intent.amount
+            } else {
+                1_000_000
+            };
+            return Some(Fill {
+                intent_id: intent.intent_id.clone(),
+                fill_amount: intent.amount,
+                execution_price,
+                liquidity_source: "accept_all".to_string(),
+            });
+        }
+
         if !self.can_fill_internally(intent) {
             return None;
         }
 
-        // Calculate execution price
-        let execution_price = (intent.min_output * 1_000_000) / intent.amount;
+        let execution_price = if intent.amount > 0 {
+            (intent.min_output * 1_000_000) / intent.amount
+        } else {
+            1_000_000
+        };
 
         Some(Fill {
             intent_id: intent.intent_id.clone(),

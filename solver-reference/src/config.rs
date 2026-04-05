@@ -21,6 +21,9 @@ pub struct SolverConfig {
     pub initial_inventory: Vec<(String, u128)>,
     pub proof_service_url: Option<String>,
     pub proof_service_api_key: Option<String>,
+    /// When true, solver fills every intent at min_output without needing
+    /// real inventory or DEX quotes. For testing / demo only.
+    pub accept_all_intents: bool,
 }
 
 impl SolverConfig {
@@ -56,14 +59,14 @@ impl SolverConfig {
         let solver_bond_proof = env::var("SOLVER_BOND_PROOF")
             .map_err(|_| "SOLVER_BOND_PROOF environment variable not set".to_string())?;
         let dex_quote_endpoints = env::var("DEX_QUOTE_ENDPOINTS")
-            .map_err(|_| "DEX_QUOTE_ENDPOINTS environment variable not set".to_string())?
+            .unwrap_or_default()
             .split(',')
             .map(|entry| entry.trim().to_string())
             .filter(|entry| !entry.is_empty())
             .collect::<Vec<_>>();
 
         let initial_inventory = env::var("SOLVER_INITIAL_INVENTORY")
-            .map_err(|_| "SOLVER_INITIAL_INVENTORY environment variable not set".to_string())?
+            .unwrap_or_default()
             .split(',')
             .filter(|entry| !entry.trim().is_empty())
             .map(|entry| {
@@ -77,6 +80,10 @@ impl SolverConfig {
                 Ok((asset, amount))
             })
             .collect::<Result<Vec<_>, _>>()?;
+
+        let accept_all_intents = env::var("SOLVER_ACCEPT_ALL_INTENTS")
+            .map(|v| v.trim().eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
 
         let proof_service_url = env::var("PROOF_SERVICE_URL").ok()
             .map(|value| value.trim().to_string())
@@ -104,6 +111,7 @@ impl SolverConfig {
             initial_inventory,
             proof_service_url,
             proof_service_api_key,
+            accept_all_intents,
         })
     }
 
@@ -168,12 +176,11 @@ impl SolverConfig {
             return Err("SOLVER_PRIVATE_KEY must be 32-byte hex with 0x prefix".to_string());
         }
 
-        if self.dex_quote_endpoints.is_empty() {
-            return Err("DEX_QUOTE_ENDPOINTS must include at least one endpoint".to_string());
-        }
-
-        if self.initial_inventory.is_empty() {
-            return Err("SOLVER_INITIAL_INVENTORY must include at least one asset".to_string());
+        if self.dex_quote_endpoints.is_empty() && self.initial_inventory.is_empty() && !self.accept_all_intents {
+            return Err(
+                "Solver has no fill source: set DEX_QUOTE_ENDPOINTS, SOLVER_INITIAL_INVENTORY, \
+                 or SOLVER_ACCEPT_ALL_INTENTS=true".to_string()
+            );
         }
 
         if let Some(url) = &self.proof_service_url {

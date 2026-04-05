@@ -51,7 +51,12 @@ async fn main() -> Result<()> {
         }
     });
 
-    let mut matching_engine = MatchingEngine::new();
+    let mut matching_engine = if config.accept_all_intents {
+        tracing::warn!("SOLVER_ACCEPT_ALL_INTENTS=true: filling every intent at min_output (demo mode)");
+        MatchingEngine::new().with_accept_all()
+    } else {
+        MatchingEngine::new()
+    };
     for (asset, amount) in &config.initial_inventory {
         matching_engine.add_inventory(asset.clone(), *amount);
     }
