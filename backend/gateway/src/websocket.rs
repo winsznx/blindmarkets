@@ -103,36 +103,59 @@ async fn handle_solver_socket(
     let send_solver_key = solver_public_key.clone();
     let send_config = config.clone();
     let mut send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            match msg {
-                SolverBroadcast::NewIntent { intent_id, batch_id, plaintext } => {
-                    let solver_key = send_solver_key.read().await.clone();
-                    if let Some(key) = solver_key {
-                        match crypto::encrypt_for_solver(&plaintext, &send_config.security.gateway_private_key, &key) {
-                            Ok(payload) => {
-                                let outbound = SolverMessage::NewIntent(IntentNotification {
-                                    intent_id,
-                                    batch_id,
-                                    encrypted_data: payload.ciphertext_hex,
-                                    gateway_public_key: payload.sender_public_key_hex,
-                                    timestamp: chrono::Utc::now().timestamp(),
-                                });
+        let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        ping_interval.tick().await; // consume the immediate first tick
+
+        loop {
+            tokio::select! {
+                recv_result = rx.recv() => {
+                    match recv_result {
+                        Ok(msg) => match msg {
+                            SolverBroadcast::NewIntent { intent_id, batch_id, plaintext } => {
+                                let solver_key = send_solver_key.read().await.clone();
+                                if let Some(key) = solver_key {
+                                    match crypto::encrypt_for_solver(&plaintext, &send_config.security.gateway_private_key, &key) {
+                                        Ok(payload) => {
+                                            let outbound = SolverMessage::NewIntent(IntentNotification {
+                                                intent_id,
+                                                batch_id,
+                                                encrypted_data: payload.ciphertext_hex,
+                                                gateway_public_key: payload.sender_public_key_hex,
+                                                timestamp: chrono::Utc::now().timestamp(),
+                                            });
+                                            if let Ok(json) = serde_json::to_string(&outbound) {
+                                                if sender.send(Message::Text(json)).await.is_err() {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to encrypt intent for solver: {}", e);
+                                        }
+                                    }
+                                } else {
+                                    warn!("Solver public key not set; skipping intent broadcast");
+                                }
+                            }
+                            SolverBroadcast::BatchClosed(notification) => {
+                                let outbound = SolverMessage::BatchClosed(notification);
                                 if let Ok(json) = serde_json::to_string(&outbound) {
                                     if sender.send(Message::Text(json)).await.is_err() {
                                         break;
                                     }
                                 }
                             }
-                            Err(e) => {
-                                error!("Failed to encrypt intent for solver: {}", e);
-                            }
+                        },
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("Solver broadcast receiver lagged by {} messages", n);
                         }
-                    } else {
-                        warn!("Solver public key not set; skipping intent broadcast");
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
                     }
                 }
-                SolverBroadcast::BatchClosed(notification) => {
-                    let outbound = SolverMessage::BatchClosed(notification);
+                _ = ping_interval.tick() => {
+                    let outbound = SolverMessage::Ping { timestamp: chrono::Utc::now().timestamp() };
                     if let Ok(json) = serde_json::to_string(&outbound) {
                         if sender.send(Message::Text(json)).await.is_err() {
                             break;
