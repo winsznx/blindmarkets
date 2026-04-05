@@ -1,8 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::Serialize;
-use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
-use starknet::accounts::Call;
-use starknet::core::types::{BlockId, BlockTag, FieldElement, FunctionCall};
+use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
+use starknet::core::types::{BlockId, BlockTag, Call, Felt, FunctionCall};
 use url::Url;
 use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
@@ -24,26 +23,23 @@ pub struct StarknetConfig {
 pub struct StarknetClient {
     account: SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>,
     provider: Arc<JsonRpcClient<HttpTransport>>,
-    batch_auction_address: FieldElement,
-    batch_settlement_address: FieldElement,
-    solver_bond_address: FieldElement,
+    batch_auction_address: Felt,
+    batch_settlement_address: Felt,
+    solver_bond_address: Felt,
 }
 
 impl StarknetClient {
     pub fn new(config: StarknetConfig) -> Result<Self> {
         let rpc_url = Url::parse(&config.rpc_url).map_err(|e| anyhow!("Invalid RPC URL: {}", e))?;
         let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(rpc_url)));
-        let account_address = parse_field_element(&config.account_address, "account_address")?;
-        let chain_id = parse_field_element(&config.chain_id, "chain_id")?;
-        let private_key = parse_field_element(&config.private_key, "private_key")?;
+        let account_address = parse_felt(&config.account_address, "account_address")?;
+        let chain_id = parse_felt(&config.chain_id, "chain_id")?;
+        let private_key = parse_felt(&config.private_key, "private_key")?;
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(private_key));
         let account = SingleOwnerAccount::new(Arc::clone(&provider), signer, account_address, chain_id, ExecutionEncoding::New);
-        let batch_auction_address =
-            parse_field_element(&config.batch_auction_address, "batch_auction_address")?;
-        let batch_settlement_address =
-            parse_field_element(&config.batch_settlement_address, "batch_settlement_address")?;
-        let solver_bond_address =
-            parse_field_element(&config.solver_bond_address, "solver_bond_address")?;
+        let batch_auction_address = parse_felt(&config.batch_auction_address, "batch_auction_address")?;
+        let batch_settlement_address = parse_felt(&config.batch_settlement_address, "batch_settlement_address")?;
+        let solver_bond_address = parse_felt(&config.solver_bond_address, "solver_bond_address")?;
 
         Ok(Self {
             account,
@@ -63,12 +59,12 @@ impl StarknetClient {
         bond_proof: &str,
     ) -> Result<String> {
         let mut calldata = Vec::new();
-        calldata.push(parse_field_element(batch_id, "batch_id")?);
-        calldata.push(parse_field_element(solution_commitment, "solution_commitment")?);
-        calldata.push(FieldElement::from(estimated_surplus));
-        calldata.push(FieldElement::ZERO);
-        calldata.push(FieldElement::from(solver_fee_bps as u128));
-        calldata.push(parse_field_element(bond_proof, "bond_proof")?);
+        calldata.push(parse_felt(batch_id, "batch_id")?);
+        calldata.push(parse_felt(solution_commitment, "solution_commitment")?);
+        calldata.push(Felt::from(estimated_surplus));
+        calldata.push(Felt::ZERO);
+        calldata.push(Felt::from(solver_fee_bps as u128));
+        calldata.push(parse_felt(bond_proof, "bond_proof")?);
 
         let call = Call {
             to: self.batch_auction_address,
@@ -76,7 +72,14 @@ impl StarknetClient {
             calldata,
         };
 
-        let tx = self.account.execute(vec![call]).send().await?;
+        let tx = self.account.execute_v3(vec![call])
+            .l1_gas(0_u64)
+            .l1_gas_price(100_000_000_000_000_u128)
+            .l1_data_gas(10_000_u64)
+            .l1_data_gas_price(100_000_000_000_u128)
+            .l2_gas(5_000_000_u64)
+            .l2_gas_price(100_000_000_000_u128)
+            .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
@@ -88,21 +91,21 @@ impl StarknetClient {
         proofs: &[String],
     ) -> Result<String> {
         let mut calldata = Vec::new();
-        calldata.push(parse_field_element(batch_id, "batch_id")?);
-        calldata.push(parse_field_element(solver_address, "solver")?);
+        calldata.push(parse_felt(batch_id, "batch_id")?);
+        calldata.push(parse_felt(solver_address, "solver")?);
 
-        calldata.push(FieldElement::from(execution_plan.len() as u128));
+        calldata.push(Felt::from(execution_plan.len() as u128));
         for transfer in execution_plan {
-            calldata.push(parse_field_element(&transfer.from, "transfer.from")?);
-            calldata.push(parse_field_element(&transfer.to, "transfer.to")?);
-            calldata.push(parse_field_element(&transfer.asset, "transfer.asset")?);
-            calldata.push(FieldElement::from(transfer.amount));
-            calldata.push(FieldElement::ZERO);
+            calldata.push(parse_felt(&transfer.from, "transfer.from")?);
+            calldata.push(parse_felt(&transfer.to, "transfer.to")?);
+            calldata.push(parse_felt(&transfer.asset, "transfer.asset")?);
+            calldata.push(Felt::from(transfer.amount));
+            calldata.push(Felt::ZERO);
         }
 
-        calldata.push(FieldElement::from(proofs.len() as u128));
+        calldata.push(Felt::from(proofs.len() as u128));
         for proof in proofs {
-            calldata.push(parse_field_element(proof, "proof")?);
+            calldata.push(parse_felt(proof, "proof")?);
         }
 
         let call = Call {
@@ -111,49 +114,68 @@ impl StarknetClient {
             calldata,
         };
 
-        let tx = self.account.execute(vec![call]).send().await?;
+        let tx = self.account.execute_v3(vec![call])
+            .l1_gas(0_u64)
+            .l1_gas_price(100_000_000_000_000_u128)
+            .l1_data_gas(10_000_u64)
+            .l1_data_gas_price(100_000_000_000_u128)
+            .l2_gas(5_000_000_u64)
+            .l2_gas_price(100_000_000_000_u128)
+            .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
     pub async fn deposit_bond(&self, amount: u128) -> Result<String> {
-        let calldata = vec![
-            FieldElement::from(amount),
-            FieldElement::ZERO,
-        ];
+        let calldata = vec![Felt::from(amount), Felt::ZERO];
         let call = Call {
             to: self.solver_bond_address,
             selector: selector_from_name("deposit_bond")?,
             calldata,
         };
-        let tx = self.account.execute(vec![call]).send().await?;
+        let tx = self.account.execute_v3(vec![call])
+            .l1_gas(0_u64)
+            .l1_gas_price(100_000_000_000_000_u128)
+            .l1_data_gas(10_000_u64)
+            .l1_data_gas_price(100_000_000_000_u128)
+            .l2_gas(5_000_000_u64)
+            .l2_gas_price(100_000_000_000_u128)
+            .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
     pub async fn request_withdrawal(&self, amount: u128) -> Result<String> {
-        let calldata = vec![
-            FieldElement::from(amount),
-            FieldElement::ZERO,
-        ];
+        let calldata = vec![Felt::from(amount), Felt::ZERO];
         let call = Call {
             to: self.solver_bond_address,
             selector: selector_from_name("request_withdrawal")?,
             calldata,
         };
-        let tx = self.account.execute(vec![call]).send().await?;
+        let tx = self.account.execute_v3(vec![call])
+            .l1_gas(0_u64)
+            .l1_gas_price(100_000_000_000_000_u128)
+            .l1_data_gas(10_000_u64)
+            .l1_data_gas_price(100_000_000_000_u128)
+            .l2_gas(5_000_000_u64)
+            .l2_gas_price(100_000_000_000_u128)
+            .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
     pub async fn withdraw(&self, amount: u128) -> Result<String> {
-        let calldata = vec![
-            FieldElement::from(amount),
-            FieldElement::ZERO,
-        ];
+        let calldata = vec![Felt::from(amount), Felt::ZERO];
         let call = Call {
             to: self.solver_bond_address,
             selector: selector_from_name("withdraw")?,
             calldata,
         };
-        let tx = self.account.execute(vec![call]).send().await?;
+        let tx = self.account.execute_v3(vec![call])
+            .l1_gas(0_u64)
+            .l1_gas_price(100_000_000_000_000_u128)
+            .l1_data_gas(10_000_u64)
+            .l1_data_gas_price(100_000_000_000_u128)
+            .l2_gas(5_000_000_u64)
+            .l2_gas_price(100_000_000_000_u128)
+            .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
@@ -161,7 +183,7 @@ impl StarknetClient {
         let call = FunctionCall {
             contract_address: self.solver_bond_address,
             entry_point_selector: selector_from_name("get_solver_info")?,
-            calldata: vec![parse_field_element(solver_address, "solver_address")?],
+            calldata: vec![parse_felt(solver_address, "solver_address")?],
         };
 
         let response = self.provider.call(call, BlockId::Tag(BlockTag::Latest)).await?;
@@ -172,14 +194,14 @@ impl StarknetClient {
         Ok(SolverInfo {
             solver: format!("{:#x}", response[0]),
             bond_amount: format_u256(response[1], response[2]),
-            locked: response[3] != FieldElement::ZERO,
+            locked: response[3] != Felt::ZERO,
             successful_settlements: felt_to_u128(response[4]) as u32,
             failed_settlements: felt_to_u128(response[5]) as u32,
             slash_count_30d: felt_to_u128(response[6]) as u8,
             last_slash_timestamp: felt_to_u128(response[7]) as u64,
             withdrawal_request_time: felt_to_u128(response[8]) as u64,
             withdrawal_request_amount: format_u256(response[9], response[10]),
-            blacklisted: response[11] != FieldElement::ZERO,
+            blacklisted: response[11] != Felt::ZERO,
         })
     }
 }
@@ -198,27 +220,27 @@ pub struct SolverInfo {
     pub blacklisted: bool,
 }
 
-fn selector_from_name(name: &str) -> Result<FieldElement> {
+fn selector_from_name(name: &str) -> Result<Felt> {
     starknet::core::utils::get_selector_from_name(name)
         .map_err(|e| anyhow!("Failed to derive selector for {}: {}", name, e))
 }
 
-fn parse_field_element(value: &str, label: &str) -> Result<FieldElement> {
-    if let Some(stripped) = value.strip_prefix("0x") {
-        FieldElement::from_hex_be(stripped)
+fn parse_felt(value: &str, label: &str) -> Result<Felt> {
+    if value.starts_with("0x") || value.starts_with("0X") {
+        Felt::from_hex(value)
             .map_err(|e| anyhow!("Invalid {} hex: {}", label, e))
     } else {
-        FieldElement::from_dec_str(value)
+        Felt::from_dec_str(value)
             .map_err(|e| anyhow!("Invalid {} decimal: {}", label, e))
     }
 }
 
-fn felt_to_u128(fe: FieldElement) -> u128 {
+fn felt_to_u128(fe: Felt) -> u128 {
     let hex = format!("{:#x}", fe);
     u128::from_str_radix(hex.trim_start_matches("0x"), 16).unwrap_or(0)
 }
 
-fn format_u256(low: FieldElement, high: FieldElement) -> String {
+fn format_u256(low: Felt, high: Felt) -> String {
     let low_u128 = felt_to_u128(low);
     let high_u128 = felt_to_u128(high);
     if high_u128 == 0 {

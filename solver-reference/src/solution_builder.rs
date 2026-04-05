@@ -1,7 +1,7 @@
 use crate::intent_monitor::{DecryptedIntent, Solution, Fill, TransferPlan};
 use crate::starknet_client::{StarknetClient, StarknetConfig};
 use anyhow::anyhow;
-use starknet_crypto::{FieldElement, pedersen_hash};
+use starknet_crypto::{Felt, pedersen_hash};
 use std::collections::HashMap;
 
 pub struct SolutionBuilder {
@@ -102,8 +102,8 @@ impl SolutionBuilder {
             let from = field_from_hex(&transfer.from)?;
             let to = field_from_hex(&transfer.to)?;
             let asset = field_from_hex(&transfer.asset)?;
-            let amount_low = FieldElement::from(transfer.amount);
-            let amount_high = FieldElement::ZERO;
+            let amount_low = Felt::from(transfer.amount);
+            let amount_high = Felt::ZERO;
             let amount_hash = pedersen_hash(&amount_low, &amount_high);
             let transfer_hash = pedersen_hash(
                 &pedersen_hash(&from, &to),
@@ -193,12 +193,12 @@ fn compute_output_amount(fill: &Fill, min_output: u128) -> Result<u128, anyhow::
     Ok(std::cmp::max(output, min_output))
 }
 
-fn field_from_hex(value: &str) -> Result<FieldElement, anyhow::Error> {
-    if let Some(stripped) = value.strip_prefix("0x") {
-        FieldElement::from_hex_be(stripped)
+fn field_from_hex(value: &str) -> Result<Felt, anyhow::Error> {
+    if value.starts_with("0x") || value.starts_with("0X") {
+        Felt::from_hex(value)
             .map_err(|e| anyhow!("Invalid hex: {}", e))
     } else {
-        FieldElement::from_dec_str(value)
+        Felt::from_dec_str(value)
             .map_err(|e| anyhow!("Invalid decimal: {}", e))
     }
 }
