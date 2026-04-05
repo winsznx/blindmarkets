@@ -31,9 +31,10 @@ export default function AppHeader() {
   const pathname = usePathname();
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
-  const [countdownLabel, setCountdownLabel] = useState<string>(() => computeCountdownLabel());
+  const [countdownLabel, setCountdownLabel] = useState<string>('Batch --');
 
   useEffect(() => {
+    setCountdownLabel(computeCountdownLabel());
     const interval = setInterval(() => {
       setCountdownLabel(computeCountdownLabel());
     }, 1000);
