@@ -39,10 +39,15 @@ async fn main() -> Result<()> {
     let (intent_tx, mut intent_rx) = mpsc::channel(1000);
     let (batch_tx, mut batch_rx) = mpsc::channel(100);
 
-    let intent_monitor = IntentMonitor::new(config.clone(), intent_tx, batch_tx);
+    // Clone senders so channels stay open even when the WebSocket drops and reconnects.
+    let intent_monitor = IntentMonitor::new(config.clone(), intent_tx.clone(), batch_tx.clone());
     tokio::spawn(async move {
-        if let Err(e) = intent_monitor.connect_websocket().await {
-            tracing::error!("WebSocket connection failed: {}", e);
+        loop {
+            match intent_monitor.connect_websocket().await {
+                Ok(_) => tracing::warn!("WebSocket disconnected, reconnecting in 5s..."),
+                Err(e) => tracing::error!("WebSocket error: {}, reconnecting in 5s...", e),
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     });
 

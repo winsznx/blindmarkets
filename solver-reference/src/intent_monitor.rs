@@ -89,6 +89,10 @@ pub enum GatewayMessage {
         message: String,
         timestamp: i64,
     },
+    #[serde(rename = "ping")]
+    Ping {
+        timestamp: i64,
+    },
 }
 
 pub struct IntentMonitor {
@@ -201,6 +205,9 @@ impl IntentMonitor {
             }
             GatewayMessage::Connected { message, .. } => {
                 tracing::info!("Gateway connection confirmed: {}", message);
+            }
+            GatewayMessage::Ping { .. } => {
+                // keepalive from server — no action needed
             }
         }
     }
