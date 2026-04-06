@@ -18,14 +18,17 @@ impl BondManager {
         self.client.get_solver_info(&self.solver_address).await
     }
 
+    #[allow(dead_code)]
     pub async fn deposit_bond(&self, amount: u128) -> Result<String> {
         self.client.deposit_bond(amount).await
     }
 
+    #[allow(dead_code)]
     pub async fn request_withdrawal(&self, amount: u128) -> Result<String> {
         self.client.request_withdrawal(amount).await
     }
 
+    #[allow(dead_code)]
     pub async fn withdraw(&self, amount: u128) -> Result<String> {
         self.client.withdraw(amount).await
     }

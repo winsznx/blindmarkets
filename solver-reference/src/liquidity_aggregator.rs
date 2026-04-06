@@ -72,9 +72,6 @@ impl LiquidityAggregator {
         best_fill
     }
 
-    pub async fn estimate_gas_cost(&self, _route: &Fill) -> u128 {
-        100_000
-    }
 }
 
 impl Default for LiquidityAggregator {

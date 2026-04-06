@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::Serialize;
-use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
+use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
 use starknet::core::types::{BlockId, BlockTag, Call, Felt, FunctionCall};
 use url::Url;
 use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
@@ -125,6 +125,7 @@ impl StarknetClient {
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
+    #[allow(dead_code)]
     pub async fn deposit_bond(&self, amount: u128) -> Result<String> {
         let calldata = vec![Felt::from(amount), Felt::ZERO];
         let call = Call {
@@ -143,6 +144,7 @@ impl StarknetClient {
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
+    #[allow(dead_code)]
     pub async fn request_withdrawal(&self, amount: u128) -> Result<String> {
         let calldata = vec![Felt::from(amount), Felt::ZERO];
         let call = Call {
@@ -161,6 +163,7 @@ impl StarknetClient {
         Ok(format!("{:#x}", tx.transaction_hash))
     }
 
+    #[allow(dead_code)]
     pub async fn withdraw(&self, amount: u128) -> Result<String> {
         let calldata = vec![Felt::from(amount), Felt::ZERO];
         let call = Call {
@@ -207,6 +210,7 @@ impl StarknetClient {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct SolverInfo {
     pub solver: String,
     pub bond_amount: String,

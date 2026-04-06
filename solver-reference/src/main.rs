@@ -239,7 +239,7 @@ async fn fetch_batch_intent_order(config: &SolverConfig, batch_id: &str) -> Resu
 
     loop {
         let url = format!(
-            "{}/v1/batches/{}/intents?limit=500&offset={}",
+            "{}/v1/batches/{}/intents?offset={}",
             config.gateway_url.trim_end_matches('/'),
             batch_id,
             offset
@@ -286,7 +286,7 @@ async fn build_proofs(
         fill_map.insert(fill.intent_id.clone(), fill);
     }
     let mut proofs = Vec::with_capacity(intents.len());
-    for (_index, intent) in intents.iter().enumerate() {
+    for intent in intents {
         if intent.privacy_mode == 0 {
             proofs.push("0x0".to_string());
             continue;

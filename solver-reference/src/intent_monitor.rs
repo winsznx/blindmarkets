@@ -8,16 +8,6 @@ use crate::config::SolverConfig;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EncryptedIntent {
-    pub intent_id: String,
-    pub user_address: String,
-    pub ciphertext: String,
-    pub commitment: String,
-    pub batch_id: String,
-    pub received_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecryptedIntent {
     pub intent_id: String,
     pub user_address: String,
