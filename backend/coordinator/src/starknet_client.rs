@@ -85,11 +85,11 @@ impl StarknetClient {
 
         let tx = self.account.execute_v3(vec![call])
             .l1_gas(0_u64)
-            .l1_gas_price(100_000_000_000_000_u128)
+            .l1_gas_price(1_000_000_000_000_000_u128)
             .l1_data_gas(10_000_u64)
-            .l1_data_gas_price(100_000_000_000_u128)
+            .l1_data_gas_price(10_000_000_000_000_u128)
             .l2_gas(5_000_000_u64)
-            .l2_gas_price(100_000_000_000_u128)
+            .l2_gas_price(1_000_000_000_000_u128)
             .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
@@ -105,11 +105,11 @@ impl StarknetClient {
 
         let tx = self.account.execute_v3(vec![call])
             .l1_gas(0_u64)
-            .l1_gas_price(100_000_000_000_000_u128)
+            .l1_gas_price(1_000_000_000_000_000_u128)
             .l1_data_gas(10_000_u64)
-            .l1_data_gas_price(100_000_000_000_u128)
+            .l1_data_gas_price(10_000_000_000_000_u128)
             .l2_gas(5_000_000_u64)
-            .l2_gas_price(100_000_000_000_u128)
+            .l2_gas_price(1_000_000_000_000_u128)
             .send().await?;
         Ok(format!("{:#x}", tx.transaction_hash))
     }
