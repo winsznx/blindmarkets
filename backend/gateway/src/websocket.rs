@@ -83,9 +83,12 @@ async fn handle_solver_socket(
 ) {
     let (mut sender, mut receiver) = socket.split();
     let solver_public_key = Arc::new(tokio::sync::RwLock::new(None::<String>));
-    
+
+    // Channel for replaying missed intents: recv_task produces, send_task consumes.
+    let (replay_tx, mut replay_rx) = tokio::sync::mpsc::channel::<String>(256);
+
     let mut rx = broadcaster.subscribe();
-    
+
     info!("New solver WebSocket connection established");
 
     // Send initial connection confirmation
@@ -94,7 +97,7 @@ async fn handle_solver_socket(
         "message": "Connected to Blind BTC Intent Markets",
         "timestamp": chrono::Utc::now().timestamp()
     });
-    
+
     if let Ok(msg) = serde_json::to_string(&welcome) {
         let _ = sender.send(Message::Text(msg)).await;
     }
@@ -108,6 +111,12 @@ async fn handle_solver_socket(
 
         loop {
             tokio::select! {
+                // Replay: pre-built JSON from recv_task (catch-up on connect)
+                Some(json) = replay_rx.recv() => {
+                    if sender.send(Message::Text(json)).await.is_err() {
+                        break;
+                    }
+                }
                 recv_result = rx.recv() => {
                     match recv_result {
                         Ok(msg) => match msg {
@@ -168,12 +177,13 @@ async fn handle_solver_socket(
 
     // Spawn task to receive messages from client
     let recv_solver_key = solver_public_key.clone();
+    let recv_config = config.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 Message::Text(text) => {
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                        handle_solver_message(parsed, &pool, &recv_solver_key).await;
+                        handle_solver_message(parsed, &pool, &recv_solver_key, &recv_config, &replay_tx).await;
                     }
                 }
                 Message::Close(_) => {
@@ -181,7 +191,6 @@ async fn handle_solver_socket(
                     break;
                 }
                 Message::Ping(data) => {
-                    // WebSocket ping/pong is handled automatically by axum
                     info!("Received ping: {:?}", data);
                 }
                 _ => {}
@@ -204,18 +213,23 @@ async fn handle_solver_socket(
 
 async fn handle_solver_message(
     msg: serde_json::Value,
-    _pool: &PgPool,
+    pool: &PgPool,
     solver_public_key: &Arc<tokio::sync::RwLock<Option<String>>>,
+    config: &Config,
+    replay_tx: &tokio::sync::mpsc::Sender<String>,
 ) {
     let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
-    
+
     match msg_type {
         "hello" => {
             if let Some(key) = msg.get("solver_public_key").and_then(|v| v.as_str()) {
                 if key.starts_with("0x") && key.len() == 66 {
-                    let mut lock = solver_public_key.write().await;
-                    *lock = Some(key.to_string());
+                    {
+                        let mut lock = solver_public_key.write().await;
+                        *lock = Some(key.to_string());
+                    }
                     info!("Solver public key registered");
+                    replay_pending_intents(pool, config, key, replay_tx).await;
                 } else {
                     warn!("Invalid solver_public_key format");
                 }
@@ -224,14 +238,88 @@ async fn handle_solver_message(
         "subscribe_batch" => {
             if let Some(batch_id) = msg.get("batch_id").and_then(|v| v.as_str()) {
                 info!("Solver subscribed to batch: {}", batch_id);
-                // Could track subscriptions per batch if needed
             }
         }
-        "heartbeat" => {
-            // Solver is alive
-        }
+        "heartbeat" => {}
         _ => {
             warn!("Unknown message type: {}", msg_type);
+        }
+    }
+}
+
+async fn replay_pending_intents(
+    pool: &PgPool,
+    config: &Config,
+    solver_key: &str,
+    tx: &tokio::sync::mpsc::Sender<String>,
+) {
+    let rows = sqlx::query!(
+        r#"
+        SELECT intent_id, batch_id, ciphertext, encrypted_session_key, client_public_key
+        FROM intents
+        WHERE status IN ('PENDING', 'AUCTION')
+          AND submission_mode = 'GATEWAY'
+          AND encrypted_session_key IS NOT NULL
+        ORDER BY created_at ASC
+        "#
+    )
+    .fetch_all(pool)
+    .await;
+
+    let rows = match rows {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to query pending intents for replay: {}", e);
+            return;
+        }
+    };
+
+    info!("Replaying {} pending/auction intents to newly connected solver", rows.len());
+
+    for row in rows {
+        let Some(enc_session_key) = row.encrypted_session_key else {
+            continue;
+        };
+        let client_pub_key = row.client_public_key;
+
+        let plaintext = match crate::crypto::decrypt_from_client(
+            &row.ciphertext,
+            &enc_session_key,
+            &client_pub_key,
+            &config.security.gateway_private_key,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!("Failed to decrypt intent {} for replay: {}", row.intent_id, e);
+                continue;
+            }
+        };
+
+        let payload = match crate::crypto::encrypt_for_solver(
+            &plaintext,
+            &config.security.gateway_private_key,
+            solver_key,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!("Failed to re-encrypt intent {} for solver: {}", row.intent_id, e);
+                continue;
+            }
+        };
+
+        let outbound = SolverMessage::NewIntent(IntentNotification {
+            intent_id: row.intent_id.clone(),
+            batch_id: row.batch_id,
+            encrypted_data: payload.ciphertext_hex,
+            gateway_public_key: payload.sender_public_key_hex,
+            timestamp: chrono::Utc::now().timestamp(),
+        });
+
+        if let Ok(json) = serde_json::to_string(&outbound) {
+            if tx.send(json).await.is_err() {
+                warn!("Replay channel closed before intent {} was sent", row.intent_id);
+                return;
+            }
         }
     }
 }
