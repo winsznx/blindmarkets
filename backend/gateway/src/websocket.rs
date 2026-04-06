@@ -126,8 +126,8 @@ async fn handle_solver_socket(
                                     match crypto::encrypt_for_solver(&plaintext, &send_config.security.gateway_private_key, &key) {
                                         Ok(payload) => {
                                             let outbound = SolverMessage::NewIntent(IntentNotification {
-                                                intent_id,
-                                                batch_id,
+                                                intent_id: intent_id.clone(),
+                                                batch_id: batch_id.clone(),
                                                 encrypted_data: payload.ciphertext_hex,
                                                 gateway_public_key: payload.sender_public_key_hex,
                                                 timestamp: chrono::Utc::now().timestamp(),
@@ -136,6 +136,7 @@ async fn handle_solver_socket(
                                                 if sender.send(Message::Text(json)).await.is_err() {
                                                     break;
                                                 }
+                                                info!("Sent new_intent {} (batch {}) to solver", intent_id, batch_id);
                                             }
                                         }
                                         Err(e) => {

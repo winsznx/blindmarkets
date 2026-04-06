@@ -763,6 +763,103 @@ pub async fn list_batch_intents(
     Ok(Json(BatchIntentListResponse { intent_ids }))
 }
 
+#[derive(Debug, Serialize)]
+pub struct SolverEncryptedIntent {
+    pub intent_id: String,
+    pub encrypted_data: String,
+    pub gateway_public_key: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SolverBatchIntentsResponse {
+    pub intents: Vec<SolverEncryptedIntent>,
+}
+
+/// Called by solvers to pull encrypted intents for a batch on-demand.
+/// Re-encrypts each intent's plaintext for the requesting solver.
+pub async fn get_solver_batch_intents(
+    Path(batch_id): Path<String>,
+    axum::extract::State(pool): axum::extract::State<sqlx::PgPool>,
+    Extension(config): Extension<Arc<Config>>,
+    headers: HeaderMap,
+) -> Result<Json<SolverBatchIntentsResponse>, StatusCode> {
+    require_api_key(&headers, &config)?;
+
+    let solver_public_key = headers
+        .get("x-solver-public-key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !solver_public_key.starts_with("0x") || solver_public_key.len() != 66 {
+        tracing::warn!("Missing or invalid x-solver-public-key header");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if !batch_id.chars().all(|c| c.is_ascii_digit()) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT intent_id, batch_id, ciphertext, encrypted_session_key, client_public_key
+        FROM intents
+        WHERE batch_id = $1
+          AND status IN ('PENDING', 'AUCTION')
+          AND submission_mode = 'GATEWAY'
+          AND encrypted_session_key IS NOT NULL
+        ORDER BY sequence ASC NULLS LAST
+        "#,
+        batch_id
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let mut intents = Vec::new();
+    for row in rows {
+        let Some(enc_session_key) = row.encrypted_session_key else {
+            continue;
+        };
+
+        let plaintext = match crate::crypto::decrypt_from_client(
+            &row.ciphertext,
+            &enc_session_key,
+            &row.client_public_key,
+            &config.security.gateway_private_key,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Failed to decrypt intent {} for solver fetch: {}", row.intent_id, e);
+                continue;
+            }
+        };
+
+        let payload = match crate::crypto::encrypt_for_solver(
+            &plaintext,
+            &config.security.gateway_private_key,
+            solver_public_key,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Failed to re-encrypt intent {} for solver: {}", row.intent_id, e);
+                continue;
+            }
+        };
+
+        intents.push(SolverEncryptedIntent {
+            intent_id: row.intent_id,
+            encrypted_data: payload.ciphertext_hex,
+            gateway_public_key: payload.sender_public_key_hex,
+        });
+    }
+
+    tracing::info!("Returning {} encrypted intents for batch {} to solver", intents.len(), batch_id);
+    Ok(Json(SolverBatchIntentsResponse { intents }))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ListBatchesQuery {
     pub status: Option<String>,

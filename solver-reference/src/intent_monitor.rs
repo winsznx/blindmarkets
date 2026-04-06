@@ -233,6 +233,14 @@ impl IntentMonitor {
         }
     }
 
+    pub fn decrypt_intent_pub(&self, encrypted_data: &str, gateway_public_key: &str) -> Result<DecryptedIntent> {
+        self.decrypt_intent(encrypted_data, gateway_public_key)
+    }
+
+    pub fn solver_public_key_hex(&self) -> Result<String> {
+        self.solver_public_key()
+    }
+
     fn decrypt_intent(&self, encrypted_data: &str, gateway_public_key: &str) -> Result<DecryptedIntent> {
         let ciphertext = hex::decode(encrypted_data.trim_start_matches("0x"))?;
         if ciphertext.len() < 12 {

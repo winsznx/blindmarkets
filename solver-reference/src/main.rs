@@ -132,17 +132,46 @@ async fn main() -> Result<()> {
                     }
                 };
 
+                // Drain any buffered WS intents into pending_intents first.
+                while let Ok(envelope) = intent_rx.try_recv() {
+                    pending_intents.insert(envelope.intent.intent_id.clone(), envelope.intent);
+                }
+
+                // Check which intents are missing from the WS cache.
+                let missing: Vec<_> = ordered_intent_ids.iter()
+                    .filter(|id| !pending_intents.contains_key(id.as_str()))
+                    .cloned()
+                    .collect();
+
+                // If any are missing, pull them directly from the gateway.
+                if !missing.is_empty() {
+                    tracing::warn!(
+                        "Batch {} missing {} intent(s) from WS cache; fetching from gateway",
+                        batch_id, missing.len()
+                    );
+                    match fetch_solver_intents(&config, &batch_id).await {
+                        Ok(fetched) => {
+                            for intent in fetched {
+                                pending_intents.insert(intent.intent_id.clone(), intent);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to fetch solver intents for batch {}: {}", batch_id, e);
+                        }
+                    }
+                }
+
                 let mut ordered_intents = Vec::new();
                 for intent_id in &ordered_intent_ids {
                     if let Some(intent) = pending_intents.remove(intent_id.as_str()) {
                         ordered_intents.push(intent);
                     } else {
-                        tracing::warn!("Missing intent {} for batch {}", intent_id, batch_id);
+                        tracing::warn!("Missing intent {} for batch {} even after gateway fetch", intent_id, batch_id);
                     }
                 }
 
                 if ordered_intents.len() != ordered_intent_ids.len() {
-                    tracing::warn!("Batch {} missing intents in ciphertext pool; skipping", batch_id);
+                    tracing::warn!("Batch {} missing intents; skipping", batch_id);
                     continue;
                 }
 
@@ -206,19 +235,20 @@ async fn main() -> Result<()> {
                         info!("   Transaction: {}", tx_hash);
                         info!("   Fills: {}", solution.fills.len());
                         info!("   Estimated surplus: {}", solution.estimated_surplus);
-
+                        // Note: settlement is triggered by the coordinator after finalize_auction.
+                        // Submitting it immediately here may revert; log but don't abort.
                         match solution_builder.submit_settlement(&solution).await {
                             Ok(settle_tx) => {
                                 info!("✅ Settlement submitted for batch {}", batch_id);
                                 info!("   Settlement tx: {}", settle_tx);
                             }
                             Err(e) => {
-                                info!("❌ Settlement submission failed: {}", e);
+                                tracing::warn!("Settlement submission failed (may be expected before finalize): {}", e);
                             }
                         }
                     }
                     Err(e) => {
-                        info!("❌ Solution submission failed: {}", e);
+                        tracing::error!("❌ Solution submission failed for batch {}: {}", batch_id, e);
                     }
                 }
             }
@@ -274,6 +304,62 @@ async fn fetch_batch_intent_order(config: &SolverConfig, batch_id: &str) -> Resu
     }
 
     Ok(all_ids)
+}
+
+async fn fetch_solver_intents(
+    config: &SolverConfig,
+    batch_id: &str,
+) -> Result<Vec<crate::intent_monitor::DecryptedIntent>> {
+    use crate::intent_monitor::IntentMonitor;
+
+    let monitor = IntentMonitor::new(
+        config.clone(),
+        tokio::sync::mpsc::channel(1).0,
+        tokio::sync::mpsc::channel(1).0,
+    );
+    let solver_public_key = monitor.solver_public_key_hex()?;
+
+    let url = format!(
+        "{}/v1/batches/{}/solver_intents",
+        config.gateway_url.trim_end_matches('/'),
+        batch_id,
+    );
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .header(config.gateway_api_key_header.as_str(), config.gateway_api_key.as_str())
+        .header("x-solver-public-key", &solver_public_key)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!("Gateway error: {}", body));
+    }
+
+    let payload: serde_json::Value = response.json().await?;
+    let items = payload.get("intents")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow::anyhow!("Invalid intents response"))?;
+
+    let mut result = Vec::new();
+    for item in items {
+        let intent_id = item.get("intent_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let encrypted_data = item.get("encrypted_data").and_then(|v| v.as_str()).unwrap_or("");
+        let gateway_public_key = item.get("gateway_public_key").and_then(|v| v.as_str()).unwrap_or("");
+
+        match monitor.decrypt_intent_pub(encrypted_data, gateway_public_key) {
+            Ok(mut decrypted) => {
+                decrypted.intent_id = intent_id;
+                result.push(decrypted);
+            }
+            Err(e) => {
+                tracing::error!("Failed to decrypt fetched intent {}: {}", intent_id, e);
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 async fn build_proofs(
