@@ -149,7 +149,7 @@ async fn main() -> Result<()> {
                         "Batch {} missing {} intent(s) from WS cache; fetching from gateway",
                         batch_id, missing.len()
                     );
-                    match fetch_solver_intents(&config, &batch_id).await {
+                    match fetch_solver_intents(&config, &batch_id, &missing).await {
                         Ok(fetched) => {
                             for intent in fetched {
                                 pending_intents.insert(intent.intent_id.clone(), intent);
@@ -208,7 +208,7 @@ async fn main() -> Result<()> {
                     }
                 };
 
-                let proofs = match build_proofs(&ordered_intents, &fills, proof_provider.as_ref()).await {
+                let proofs = match build_proofs(&ordered_intents, &fills, proof_provider.as_ref(), config.accept_all_intents).await {
                     Ok(value) => value,
                     Err(e) => {
                         tracing::error!("Failed to build proofs for batch {}: {}", batch_id, e);
@@ -309,6 +309,7 @@ async fn fetch_batch_intent_order(config: &SolverConfig, batch_id: &str) -> Resu
 async fn fetch_solver_intents(
     config: &SolverConfig,
     batch_id: &str,
+    intent_ids: &[String],
 ) -> Result<Vec<crate::intent_monitor::DecryptedIntent>> {
     use crate::intent_monitor::IntentMonitor;
 
@@ -319,11 +320,20 @@ async fn fetch_solver_intents(
     );
     let solver_public_key = monitor.solver_public_key_hex()?;
 
-    let url = format!(
+    let base_url = format!(
         "{}/v1/batches/{}/solver_intents",
         config.gateway_url.trim_end_matches('/'),
         batch_id,
     );
+
+    // Pass explicit intent_ids so the gateway can bypass the batch_id filter.
+    // Intents may have been requeued to a different batch_id since batch_closed.
+    let url = if !intent_ids.is_empty() {
+        format!("{}?intent_ids={}", base_url, intent_ids.join(","))
+    } else {
+        base_url
+    };
+
     let client = reqwest::Client::new();
     let response = client
         .get(&url)
@@ -366,6 +376,7 @@ async fn build_proofs(
     intents: &[crate::intent_monitor::DecryptedIntent],
     fills: &[crate::intent_monitor::Fill],
     provider: Option<&ProofProvider>,
+    accept_all: bool,
 ) -> Result<Vec<String>> {
     let mut fill_map = std::collections::HashMap::new();
     for fill in fills {
@@ -374,6 +385,15 @@ async fn build_proofs(
     let mut proofs = Vec::with_capacity(intents.len());
     for intent in intents {
         if intent.privacy_mode == 0 {
+            proofs.push("0x0".to_string());
+            continue;
+        }
+
+        if provider.is_none() && accept_all {
+            tracing::warn!(
+                "Intent {} has privacy_mode={} but no proof service configured; using dummy proof (accept_all mode)",
+                intent.intent_id, intent.privacy_mode
+            );
             proofs.push("0x0".to_string());
             continue;
         }

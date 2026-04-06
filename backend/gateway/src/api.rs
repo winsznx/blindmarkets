@@ -777,11 +777,20 @@ pub struct SolverBatchIntentsResponse {
 
 /// Called by solvers to pull encrypted intents for a batch on-demand.
 /// Re-encrypts each intent's plaintext for the requesting solver.
+#[derive(Debug, Deserialize)]
+pub struct SolverBatchIntentsQuery {
+    /// Comma-separated intent_ids. When provided, bypasses the batch_id filter
+    /// so the solver can look up intents that may have been requeued to a
+    /// different batch since the batch_closed message was sent.
+    pub intent_ids: Option<String>,
+}
+
 pub async fn get_solver_batch_intents(
     Path(batch_id): Path<String>,
     axum::extract::State(pool): axum::extract::State<sqlx::PgPool>,
     Extension(config): Extension<Arc<Config>>,
     headers: HeaderMap,
+    Query(params): Query<SolverBatchIntentsQuery>,
 ) -> Result<Json<SolverBatchIntentsResponse>, StatusCode> {
     require_api_key(&headers, &config)?;
 
@@ -799,24 +808,70 @@ pub async fn get_solver_batch_intents(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let rows = sqlx::query!(
-        r#"
-        SELECT intent_id, batch_id, ciphertext, encrypted_session_key, client_public_key
-        FROM intents
-        WHERE batch_id = $1
-          AND status IN ('PENDING', 'AUCTION')
-          AND submission_mode = 'GATEWAY'
-          AND encrypted_session_key IS NOT NULL
-        ORDER BY sequence ASC NULLS LAST
-        "#,
-        batch_id
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    // If explicit intent_ids are provided, look them up directly regardless of
+    // current batch_id assignment — the intent may have been requeued between
+    // batch_closed and this fetch.
+    let explicit_ids: Option<Vec<String>> = params.intent_ids.as_deref().map(|raw| {
+        raw.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    });
+
+    struct SolverIntentRow {
+        intent_id: String,
+        #[allow(dead_code)]
+        batch_id: String,
+        ciphertext: String,
+        encrypted_session_key: Option<String>,
+        client_public_key: String,
+    }
+
+    let rows: Vec<SolverIntentRow> = if let Some(ref ids) = explicit_ids {
+        tracing::info!(
+            "Fetching {} intent(s) by explicit IDs for batch {} (bypassing batch_id filter)",
+            ids.len(), batch_id
+        );
+        sqlx::query_as!(
+            SolverIntentRow,
+            r#"
+            SELECT intent_id, batch_id, ciphertext, encrypted_session_key, client_public_key
+            FROM intents
+            WHERE intent_id = ANY($1)
+              AND status IN ('PENDING', 'AUCTION')
+              AND submission_mode = 'GATEWAY'
+              AND encrypted_session_key IS NOT NULL
+            ORDER BY sequence ASC NULLS LAST
+            "#,
+            ids as &[String]
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error (explicit ids): {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+    } else {
+        sqlx::query_as!(
+            SolverIntentRow,
+            r#"
+            SELECT intent_id, batch_id, ciphertext, encrypted_session_key, client_public_key
+            FROM intents
+            WHERE batch_id = $1
+              AND status IN ('PENDING', 'AUCTION')
+              AND submission_mode = 'GATEWAY'
+              AND encrypted_session_key IS NOT NULL
+            ORDER BY sequence ASC NULLS LAST
+            "#,
+            batch_id
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+    };
 
     let mut intents = Vec::new();
     for row in rows {
