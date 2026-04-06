@@ -259,7 +259,6 @@ async fn replay_pending_intents(
         SELECT intent_id, batch_id, ciphertext, encrypted_session_key, client_public_key
         FROM intents
         WHERE status IN ('PENDING', 'AUCTION')
-          AND submission_mode = 'GATEWAY'
           AND encrypted_session_key IS NOT NULL
         ORDER BY created_at ASC
         "#

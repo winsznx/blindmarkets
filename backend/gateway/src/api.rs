@@ -839,7 +839,6 @@ pub async fn get_solver_batch_intents(
             FROM intents
             WHERE intent_id = ANY($1)
               AND status IN ('PENDING', 'AUCTION')
-              AND submission_mode = 'GATEWAY'
               AND encrypted_session_key IS NOT NULL
             ORDER BY sequence ASC NULLS LAST
             "#,
@@ -859,7 +858,6 @@ pub async fn get_solver_batch_intents(
             FROM intents
             WHERE batch_id = $1
               AND status IN ('PENDING', 'AUCTION')
-              AND submission_mode = 'GATEWAY'
               AND encrypted_session_key IS NOT NULL
             ORDER BY sequence ASC NULLS LAST
             "#,
