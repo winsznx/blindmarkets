@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use futures::{StreamExt, SinkExt};
 use anyhow::Result;
@@ -14,13 +14,37 @@ pub struct DecryptedIntent {
     pub user_address: String,
     pub asset_in: String,
     pub asset_out: String,
+    #[serde(deserialize_with = "deserialize_u128")]
     pub amount: u128,
     pub amount_commitment: String,
+    #[serde(deserialize_with = "deserialize_u128")]
     pub min_output: u128,
     pub max_fee_bps: u16,
+    #[serde(deserialize_with = "deserialize_u64")]
     pub deadline: u64,
     pub privacy_mode: u8,
     pub nonce: String,
+}
+
+fn deserialize_u128<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Number(n) => n.as_u64()
+            .map(|v| v as u128)
+            .ok_or_else(|| serde::de::Error::custom("invalid u128")),
+        serde_json::Value::String(s) => s.parse::<u128>()
+            .map_err(|_| serde::de::Error::custom("invalid u128 string")),
+        _ => Err(serde::de::Error::custom("expected number or string for u128")),
+    }
+}
+
+fn deserialize_u64<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Number(n) => n.as_u64()
+            .ok_or_else(|| serde::de::Error::custom("invalid u64")),
+        serde_json::Value::String(s) => s.parse::<u64>()
+            .map_err(|_| serde::de::Error::custom("invalid u64 string")),
+        _ => Err(serde::de::Error::custom("expected number or string for u64")),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
