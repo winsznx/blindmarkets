@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecryptedIntent {
+    #[serde(default)]
     pub intent_id: String,
     pub user_address: String,
     pub asset_in: String,
@@ -177,14 +178,19 @@ impl IntentMonitor {
         match msg {
             GatewayMessage::NewIntent { intent_id, batch_id, encrypted_data, gateway_public_key, .. } => {
                 tracing::info!("Received new intent: {} in batch: {}", intent_id, batch_id);
-                // Decrypt and process intent
-                if let Ok(decrypted) = self.decrypt_intent(&encrypted_data, &gateway_public_key) {
-                    let envelope = IntentEnvelope {
-                        batch_id,
-                        intent: decrypted,
-                    };
-                    if self.intent_sender.send(envelope).await.is_err() {
-                        tracing::error!("Failed to forward decrypted intent");
+                match self.decrypt_intent(&encrypted_data, &gateway_public_key) {
+                    Ok(mut decrypted) => {
+                        decrypted.intent_id = intent_id;
+                        let envelope = IntentEnvelope {
+                            batch_id,
+                            intent: decrypted,
+                        };
+                        if self.intent_sender.send(envelope).await.is_err() {
+                            tracing::error!("Failed to forward decrypted intent");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to decrypt intent {}: {}", intent_id, e);
                     }
                 }
             }
