@@ -823,6 +823,7 @@ pub async fn get_solver_batch_intents(
         #[allow(dead_code)]
         batch_id: String,
         ciphertext: String,
+        // sqlx maps nullable TEXT columns to Option even with IS NOT NULL filter
         encrypted_session_key: Option<String>,
         client_public_key: String,
     }
@@ -874,9 +875,8 @@ pub async fn get_solver_batch_intents(
     let mut intents = Vec::new();
     for row in rows {
         let Some(enc_session_key) = row.encrypted_session_key else {
-            continue;
+            continue; // filtered by IS NOT NULL but guard for safety
         };
-
         let plaintext = match crate::crypto::decrypt_from_client(
             &row.ciphertext,
             &enc_session_key,

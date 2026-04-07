@@ -278,7 +278,7 @@ async fn replay_pending_intents(
 
     for row in rows {
         let Some(enc_session_key) = row.encrypted_session_key else {
-            continue;
+            continue; // filtered by IS NOT NULL but guard for safety
         };
         let client_pub_key = row.client_public_key;
 
