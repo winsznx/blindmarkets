@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::auth::*;
+    use crate::auth::*;
 
     #[test]
     fn test_validate_rejects_invalid_length() {
@@ -47,7 +47,7 @@ mod tests {
         let result = validate_signature_format(user_address, message_hash, &signature);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature r"));
+        assert!(result.unwrap_err().contains("Invalid signature element 0"));
     }
 
     #[test]

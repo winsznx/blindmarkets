@@ -123,4 +123,5 @@ pub fn extract_user_from_signature(_signature: &[String]) -> Result<String, Stri
 }
 
 #[cfg(test)]
+#[path = "auth_tests.rs"]
 mod auth_tests;

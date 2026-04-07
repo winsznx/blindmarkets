@@ -166,3 +166,16 @@
 - What changed: Removed failing root runtime dependencies, simplified landing render path, fixed public nav section links, replaced crashing Starkzap runtime import path with dependency-safe adapter, and added root error boundaries required by Next app router.
 - Next task: restart dev server and verify route rendering end-to-end in browser.
 
+## 2026-04-06 - Solver Test Recovery
+- Task ID: Solver/WebSocket follow-up
+- Files modified: solver-reference/src/intent_monitor.rs, solver-reference/src/liquidity_aggregator.rs
+- What changed: Updated the intent monitor test fixture for the new `accept_all_intents` config field and hardened the DEX HTTP client construction with `reqwest::Client::builder().no_proxy()` so the solver test suite no longer panics on macOS system proxy lookup.
+- Verification: `cargo test --quiet` in `solver-reference` now passes (`5 passed`).
+- Next task: verify gateway crate once SQLx query metadata is available locally.
+
+## 2026-04-06 - Gateway Test Harness Cleanup
+- Task ID: Gateway/WebSocket follow-up
+- Files modified: backend/gateway/src/auth.rs, backend/gateway/src/auth_tests.rs, backend/gateway/src/api.rs, backend/gateway/src/websocket.rs
+- What changed: Re-linked `auth_tests.rs` with an explicit path attribute, fixed the test import/assertion to match current validation errors, and removed stale optional handling for `encrypted_session_key` in solver-intent replay/fetch paths where SQL already filters `IS NOT NULL`.
+- Verification: `cargo test --quiet` in `backend/gateway` now gets past the Rust module/type regressions and is blocked on SQLx compile-time query metadata (`DATABASE_URL` / `cargo sqlx prepare`), not the WebSocket/auth code changes.
+- Next task: provide a live `DATABASE_URL` or generate SQLx offline metadata, then rerun gateway tests.

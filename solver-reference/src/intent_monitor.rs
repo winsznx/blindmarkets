@@ -313,6 +313,7 @@ mod tests {
             initial_inventory: vec![("0xUSDC".to_string(), 1_000_000)],
             proof_service_url: None,
             proof_service_api_key: None,
+            accept_all_intents: false,
         };
         let (intent_tx, _intent_rx) = mpsc::channel(1);
         let (batch_tx, _batch_rx) = mpsc::channel(1);

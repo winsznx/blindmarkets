@@ -8,9 +8,14 @@ pub struct LiquidityAggregator {
 
 impl LiquidityAggregator {
     pub fn new(dex_endpoints: Vec<String>) -> Self {
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("failed to build DEX quote HTTP client");
+
         Self {
             dex_endpoints,
-            client: reqwest::Client::new(),
+            client,
         }
     }
 
